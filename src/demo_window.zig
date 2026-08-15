@@ -102,8 +102,8 @@ pub fn main() !void {
     // GenMeshSphere creates vertex data in CPU memory.
     // DrawMeshInstanced auto-uploads VAO/VBO to GPU on first draw (lazy upload).
     // No explicit UploadMesh needed — avoids "Trying to re-load" warnings.
-    var solid_mesh = rl.GenMeshSphere(SPHERE_RADIUS, SPHERE_RINGS, SPHERE_SLICES);
-    var wire_mesh = rl.GenMeshSphere(WIRE_RADIUS, WIRE_RINGS, WIRE_SLICES);
+    const solid_mesh = rl.GenMeshSphere(SPHERE_RADIUS, SPHERE_RINGS, SPHERE_SLICES);
+    const wire_mesh = rl.GenMeshSphere(WIRE_RADIUS, WIRE_RINGS, WIRE_SLICES);
 
     // --- Materials ---
     var solid_mat = rl.LoadMaterialDefault();
