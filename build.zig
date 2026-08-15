@@ -77,6 +77,12 @@ pub fn build(b: *std.Build) void {
         // Phase 8D: CORDIC + Tensor (math foundation for P³)
         .{ "cordic",       "src/p3_cordic.zig" },
         .{ "tensor",       "src/p3_tensor.zig" },
+        // Phase 10: UE Math port (DualQuat, SH, PolyRoot, Sobol/Halton, Archetype)
+        .{ "dual_quat",      "src/p3_dual_quat.zig" },
+        .{ "sh",             "src/p3_sh.zig" },
+        .{ "polyroot",       "src/p3_polyroot.zig" },
+        .{ "quasirandom",    "src/p3_quasirandom.zig" },
+        .{ "archetype",      "src/p3_archetype.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
