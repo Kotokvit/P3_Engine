@@ -74,6 +74,9 @@ pub fn build(b: *std.Build) void {
         .{ "ui_animation",    "src/p3_ui_animation.zig" },
         .{ "ui_navigation",   "src/p3_ui_navigation.zig" },
         .{ "ui_render",       "src/p3_ui_render.zig" },
+        // Phase 8D: CORDIC + Tensor (math foundation for P³)
+        .{ "cordic",       "src/p3_cordic.zig" },
+        .{ "tensor",       "src/p3_tensor.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
