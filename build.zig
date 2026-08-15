@@ -304,4 +304,49 @@ pub fn build(b: *std.Build) void {
         const run_demo_step = b.step("run-demo", "Run P³ Engine live viewport demo");
         run_demo_step.dependOn(&run_demo.step);
     }
+
+    // ========================================================
+    // TARGET 4: p3-gui-demo (Raylib 2D GUI components demo)
+    // ========================================================
+    // zig build gui-demo      — собрать GUI демо
+    // zig build run-gui-demo  — запустить GUI демо (needs raylib + display)
+    //
+    // Demonstrates all O3DE LyShine UI components live:
+    //   Button, Checkbox, RadioButton, Slider, ScrollBar,
+    //   Text, TextInput, DragDrop, Animation, Navigation
+    // ========================================================
+    {
+        const gui_exe = b.addExecutable(.{
+            .name = "p3-gui-demo",
+            .root_source_file = b.path("src/gui_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            gui_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        gui_exe.linkLibC();
+        gui_exe.linkSystemLibrary("raylib");
+        gui_exe.linkSystemLibrary("GL");
+        gui_exe.linkSystemLibrary("m");
+        gui_exe.linkSystemLibrary("pthread");
+        gui_exe.linkSystemLibrary("dl");
+        gui_exe.linkSystemLibrary("rt");
+        gui_exe.linkSystemLibrary("X11");
+        b.installArtifact(gui_exe);
+
+        const gui_demo_step = b.step("gui-demo", "Build P³ Engine Raylib GUI components demo");
+        gui_demo_step.dependOn(&gui_exe.step);
+
+        const run_gui_demo = b.addRunArtifact(gui_exe);
+        const run_gui_demo_step = b.step("run-gui-demo", "Run P³ Engine GUI components demo");
+        run_gui_demo_step.dependOn(&run_gui_demo.step);
+    }
 }
