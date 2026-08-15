@@ -183,7 +183,7 @@ fn drawButton(x: i32, y: i32, w: i32, h: i32, label: [*:0]const u8, is_hover: bo
     rl.DrawRectangle(x, y, w, h, bg);
     rl.DrawRectangleLines(x, y, w, h, theme.panel_border);
     const label_width = rl.MeasureText(label, 18);
-    rl.DrawText(label, x + (w - label_width) / 2, y + (h - 18) / 2, 18, theme.btn_text);
+    rl.DrawText(label, x + @divTrunc(w - label_width, 2), y + @divTrunc(h - 18, 2), 18, theme.btn_text);
 }
 
 fn drawCheckbox(x: i32, y: i32, size: i32, checked: bool, is_hover: bool, theme: Theme) void {
@@ -191,8 +191,8 @@ fn drawCheckbox(x: i32, y: i32, size: i32, checked: bool, is_hover: bool, theme:
     if (checked) {
         rl.DrawRectangle(x, y, size, size, theme.checkbox_checked);
         // Checkmark
-        rl.DrawLine(x + 4, y + size / 2, x + size / 3, y + size - 5, .{ .r = 255, .g = 255, .b = 255, .a = 255 });
-        rl.DrawLine(x + size / 3, y + size - 5, x + size - 4, y + 4, .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+        rl.DrawLine(x + 4, y + @divTrunc(size, 2), x + @divTrunc(size, 3), y + size - 5, .{ .r = 255, .g = 255, .b = 255, .a = 255 });
+        rl.DrawLine(x + @divTrunc(size, 3), y + size - 5, x + size - 4, y + 4, .{ .r = 255, .g = 255, .b = 255, .a = 255 });
     } else {
         rl.DrawRectangle(x, y, size, size, theme.checkbox_empty);
     }
@@ -209,13 +209,13 @@ fn drawRadioButton(x: i32, y: i32, radius: i32, selected: bool, is_hover: bool, 
 
 fn drawSlider(x: i32, y: i32, w: i32, h: i32, val: f32, theme: Theme) void {
     // Track
-    rl.DrawRectangle(x, y + h / 3, w, h / 3, theme.slider_track);
+    rl.DrawRectangle(x, y + @divTrunc(h, 3), w, @divTrunc(h, 3), theme.slider_track);
     // Fill
     const fill_w: i32 = @intFromFloat(@as(f32, @floatFromInt(w)) * val);
-    rl.DrawRectangle(x, y + h / 3, fill_w, h / 3, theme.slider_fill);
+    rl.DrawRectangle(x, y + @divTrunc(h, 3), fill_w, @divTrunc(h, 3), theme.slider_fill);
     // Handle
     const handle_x = x + fill_w;
-    rl.DrawCircle(handle_x, y + h / 2, @floatFromInt(h / 2 + 2), theme.slider_handle);
+    rl.DrawCircle(handle_x, y + @divTrunc(h, 2), @floatFromInt(@divTrunc(h, 2) + 2), theme.slider_handle);
 }
 
 fn drawScrollBar(x: i32, y: i32, w: i32, h: i32, offset: f32, content_ratio: f32, theme: Theme) void {
@@ -238,9 +238,9 @@ fn drawInputField(x: i32, y: i32, w: i32, h: i32, text: []const u8, active: bool
         var buf: [65]u8 = undefined;
         @memcpy(buf[0..text.len], text);
         buf[text.len] = 0;
-        rl.DrawText(@ptrCast(buf[0..text.len :0]), x + 8, y + (h - 18) / 2, 18, theme.text_primary);
+        rl.DrawText(@ptrCast(buf[0..text.len :0]), x + 8, y + @divTrunc(h - 18, 2), 18, theme.text_primary);
     } else if (!active) {
-        rl.DrawText("Type here...", x + 8, y + (h - 18) / 2, 18, theme.text_secondary);
+        rl.DrawText("Type here...", x + 8, y + @divTrunc(h - 18, 2), 18, theme.text_secondary);
     }
     // Cursor
     if (active and cursor_visible) {
