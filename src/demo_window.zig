@@ -217,9 +217,9 @@ pub fn main() !void {
     // ========================================================================
     // CLEANUP — освобождаем GPU ресурсы
     // ========================================================================
-    rl.UnloadMesh(&solid_mesh);
+    rl.UnloadMesh(solid_mesh);
     rl.UnloadMaterial(solid_mat);
-    rl.UnloadMesh(&wire_mesh);
+    rl.UnloadMesh(wire_mesh);
     rl.UnloadMaterial(wire_mat);
     rl.CloseWindow();
 }
