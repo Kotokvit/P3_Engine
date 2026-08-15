@@ -52,6 +52,8 @@ pub fn build(b: *std.Build) void {
         .{ "jobs",        "src/p3_jobs.zig" },
         .{ "rhi",         "src/p3_rhi.zig" },
         .{ "renderer",    "src/p3_renderer.zig" },
+        // Phase 9: Full O3DE math port (Vec2/3/4, Mat3x3/4x4, Quat, Transform, Aabb, Plane, Frustum, Color, Uuid, Random)
+        .{ "math",        "src/p3_math.zig" },
         // Phase 8A: Math from Eteryya (causal, poler, null-fluid, PGA)
         .{ "causal",      "src/p3_causal.zig" },
         .{ "poler",       "src/p3_poler.zig" },
