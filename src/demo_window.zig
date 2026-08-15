@@ -47,6 +47,37 @@ const WIRE_SLICES: c_int = 6;
 // Оба имени указывают на один и тот же индекс.
 const MAP_COLOR: c_int = 0;
 
+// =============================================================================
+// HELPERS: Raymath functions not in @cImport (raymath.h vs raylib.h)
+// =============================================================================
+
+/// Translation matrix: T(x, y, z)
+/// Raylib Matrix layout (row-major):
+///   m0  m4  m8  m12     1  0  0  tx
+///   m1  m5  m9  m13  =  0  1  0  ty
+///   m2  m6  m10 m14     0  0  1  tz
+///   m3  m7  m11 m15     0  0  0  1
+fn matrixTranslate(x: f32, y: f32, z: f32) rl.Matrix {
+    return .{
+        .m0 = 1,
+        .m4 = 0,
+        .m8 = 0,
+        .m12 = x,
+        .m1 = 0,
+        .m5 = 1,
+        .m9 = 0,
+        .m13 = y,
+        .m2 = 0,
+        .m6 = 0,
+        .m10 = 1,
+        .m14 = z,
+        .m3 = 0,
+        .m7 = 0,
+        .m11 = 0,
+        .m15 = 1,
+    };
+}
+
 pub fn main() !void {
     rl.InitWindow(1280, 720, "DYNAMIS / P3 Engine — Live GPU Window (Raylib/OpenGL)");
     rl.SetTargetFPS(0); // Uncapped FPS for benchmark
@@ -137,7 +168,7 @@ pub fn main() !void {
                 const pz = r * @sin(angle);
                 const py = 1.5 * @sin(angle * 3.0 + t);
 
-                const transform = rl.MatrixTranslate(px, py, pz);
+                const transform = matrixTranslate(px, py, pz);
                 solid_transforms[i] = transform;
                 wire_transforms[i] = transform;
             }
