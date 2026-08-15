@@ -42,12 +42,31 @@ pub const HomVec4 = p3_kernel.HomVec4;
 pub const PGL4 = p3_kernel.PGL4;
 
 // =============================================================================
+// 0. WINDOW PROVIDER WRAPPER — ZGLFW → ZGPU BRIDGE
+// =============================================================================
+//
+// zglfw.Window.getFramebufferSize() returns [2]c_int, but
+// zgpu.WindowProvider.fn_getFramebufferSize expects [2]u32.
+// We need a wrapper function that converts between these types.
+
+/// Wrapper for zgpu.WindowProvider.fn_getFramebufferSize
+/// Converts zglfw's [2]c_int → [2]u32 (framebuffer sizes are always non-negative)
+fn getFramebufferSizeForZgpu(window: *const anyopaque) [2]u32 {
+    const w: *zglfw.Window = @constCast(@ptrCast(@alignCast(window)));
+    const size = w.getFramebufferSize();
+    return .{
+        @intCast(size[0]),
+        @intCast(size[1]),
+    };
+}
+
+// =============================================================================
 // 1. КОНФИГУРАЦИЯ ПРИЛОЖЕНИЯ
 // =============================================================================
 
 pub const AppConfig = struct {
-    window_width: u32 = 1280,
-    window_height: u32 = 720,
+    window_width: c_int = 1280,
+    window_height: c_int = 720,
     window_title: [:0]const u8 = "P³ Engine — Projective Geometry",
     max_points: u32 = 100_000,
     max_transforms: u32 = 10_000,
@@ -287,7 +306,7 @@ pub const P3App = struct {
     allocator: std.mem.Allocator,
     config: AppConfig,
     window: *zglfw.Window,
-    gpu_ctx: p3_gpu_rt.P3GpuContext,
+    gpu_ctx: *p3_gpu_rt.P3GpuContext,
     input: p3_input.InputState,
     camera: P3Camera,
     demo_vertices: []p3_gpu_rt.P3Vertex,
@@ -309,22 +328,23 @@ pub const P3App = struct {
         zglfw.windowHint(.client_api, .no_api);
         zglfw.windowHint(.resizable, true);
 
-        const window = try zglfw.Window.create(
+        const window = try zglfw.createWindow(
             config.window_width,
             config.window_height,
             config.window_title,
-            null,
             null,
         );
         errdefer window.destroy();
 
         // --- 2. GPU CONTEXT ---
+        // WindowProvider bridges zglfw → zgpu
+        // We need wrapper functions that match the WindowProvider signatures
         const gctx = try zgpu.GraphicsContext.create(
             allocator,
             .{
-                .window = window,
+                .window = @ptrCast(window),
                 .fn_getTime = @ptrCast(&zglfw.getTime),
-                .fn_getFramebufferSize = @ptrCast(&zglfw.Window.getFramebufferSize),
+                .fn_getFramebufferSize = &getFramebufferSizeForZgpu,
                 .fn_getWin32Window = @ptrCast(&zglfw.getWin32Window),
                 .fn_getX11Display = @ptrCast(&zglfw.getX11Display),
                 .fn_getX11Window = @ptrCast(&zglfw.getX11Window),
@@ -334,7 +354,7 @@ pub const P3App = struct {
             },
             .{},
         );
-        errdefer gctx.deinit(allocator);
+        errdefer gctx.destroy(allocator);
 
         // --- 3. P³ GPU PIPELINES ---
         const gpu_ctx = try p3_gpu_rt.P3GpuContext.init(
@@ -343,7 +363,7 @@ pub const P3App = struct {
             config.max_points,
             config.max_transforms,
         );
-        errdefer gpu_ctx.deinit();
+        errdefer gpu_ctx.deinit(allocator);
 
         // --- 4. DEMO VERTICES ---
         const demo_vertices = try p3_gpu_rt.generateS3Points(
@@ -386,9 +406,9 @@ pub const P3App = struct {
     // =====================================================================
 
     pub fn deinit(self: *P3App) void {
-        self.allocator.free(self.demo_vertices);
-        self.gpu_ctx.deinit();
         self.input.deinit(self.allocator);
+        self.allocator.free(self.demo_vertices);
+        self.gpu_ctx.deinit(self.allocator);
         self.window.destroy();
         zglfw.terminate();
         self.allocator.destroy(self);
@@ -416,8 +436,9 @@ pub const P3App = struct {
         if (self.input.reset_camera) self.camera.reset();
 
         // --- Upload MVP ---
-        const fb_width = self.window.getFramebufferSize()[0];
-        const fb_height = self.window.getFramebufferSize()[1];
+        const fb_size = self.window.getFramebufferSize();
+        const fb_width = fb_size[0];
+        const fb_height = fb_size[1];
         const aspect: f64 = if (fb_height > 0) @as(f64, @floatFromInt(fb_width)) / @as(f64, @floatFromInt(fb_height)) else 1.0;
         const mvp = self.camera.mvpGpu(aspect);
         self.gpu_ctx.uploadMVP(&mvp);

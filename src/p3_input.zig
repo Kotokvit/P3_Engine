@@ -213,8 +213,8 @@ pub const InputState = struct {
 
         // --- Клавиатура ---
         const checkKey = struct {
-            fn call(self_: *InputState, window_: *zglfw.Window, key: zglfw.Key, bit_index: u6) void {
-                const word = bit_index / 64;
+            fn call(self_: *InputState, window_: *zglfw.Window, key: zglfw.Key, bit_index: u7) void {
+                const word: usize = @intCast(bit_index / 64);
                 const bit: u64 = @as(u64, 1) << @as(u6, @intCast(bit_index % 64));
                 const pressed = window_.getKey(key) == .press;
                 const was_pressed = (self_.keys_pressed[word] & bit) != 0;
@@ -239,10 +239,10 @@ pub const InputState = struct {
         checkKey(self, window, .left_shift, 7);
         checkKey(self, window, .escape, 8);
         checkKey(self, window, .r, 9);
-        checkKey(self, window, .f1, 10);
-        checkKey(self, window, .f2, 11);
-        checkKey(self, window, .f12, 12);
-        checkKey(self, window, .left_ctrl, 13);
+        checkKey(self, window, .F1, 10);
+        checkKey(self, window, .F2, 11);
+        checkKey(self, window, .F12, 12);
+        checkKey(self, window, .left_control, 13);
 
         // --- Мышь ---
         const cursor_pos = window.getCursorPos();
@@ -272,20 +272,20 @@ pub const InputState = struct {
 
         // Модификаторы
         self.mods.shift = window.getKey(.left_shift) == .press or window.getKey(.right_shift) == .press;
-        self.mods.ctrl = window.getKey(.left_ctrl) == .press or window.getKey(.right_ctrl) == .press;
+        self.mods.ctrl = window.getKey(.left_control) == .press or window.getKey(.right_control) == .press;
         self.mods.alt = window.getKey(.left_alt) == .press or window.getKey(.right_alt) == .press;
     }
 
     /// Проверить: клавиша нажата в этом кадре?
-    pub fn isKeyJustPressed(self: *const InputState, bit_index: u6) bool {
-        const word = bit_index / 64;
+    pub fn isKeyJustPressed(self: *const InputState, bit_index: u7) bool {
+        const word: usize = @intCast(bit_index / 64);
         const bit: u64 = @as(u64, 1) << @as(u6, @intCast(bit_index % 64));
         return (self.keys_just_pressed[word] & bit) != 0;
     }
 
     /// Проверить: клавиша удерживается?
-    pub fn isKeyDown(self: *const InputState, bit_index: u6) bool {
-        const word = bit_index / 64;
+    pub fn isKeyDown(self: *const InputState, bit_index: u7) bool {
+        const word: usize = @intCast(bit_index / 64);
         const bit: u64 = @as(u64, 1) << @as(u6, @intCast(bit_index % 64));
         return (self.keys_pressed[word] & bit) != 0;
     }

@@ -105,7 +105,7 @@ pub const wgsl_p3_fragment =
 // Нет singleton. Нет global state. Явный ownership.
 
 pub const P3GpuContext = struct {
-    gctx: zgpu.GraphicsContext,
+    gctx: *zgpu.GraphicsContext,
     allocator: std.mem.Allocator,
 
     // --- Shader modules (raw wgpu objects, not handles) ---
@@ -168,10 +168,10 @@ pub const P3GpuContext = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        gctx: zgpu.GraphicsContext,
+        gctx: *zgpu.GraphicsContext,
         max_points: u32,
         max_transforms: u32,
-    ) !P3GpuContext {
+    ) !*P3GpuContext {
         const device = gctx.device;
 
         // --- 1. COMPILE SHADER MODULES ---
@@ -211,15 +211,15 @@ pub const P3GpuContext = struct {
         // --- 2. CREATE COMPUTE PIPELINES ---
         // FS-distance: bindings = (positions: storage, distances: storage_rw, reference: uniform)
         const fs_distance_bgl = gctx.createBindGroupLayout(&.{
-            zgpu.bufferEntry(0, .{ .storage = true }, .storage, false, 0),
-            zgpu.bufferEntry(1, .{ .storage = true }, .storage, false, 0),
-            zgpu.bufferEntry(2, .{ .uniform = true }, .uniform, false, 0),
+            zgpu.bufferEntry(0, .{ .compute = true }, .storage, false, 0),
+            zgpu.bufferEntry(1, .{ .compute = true }, .storage, false, 0),
+            zgpu.bufferEntry(2, .{ .compute = true }, .uniform, false, 0),
         });
         const fs_distance_pl = gctx.createPipelineLayout(&.{fs_distance_bgl});
         const fs_distance_pipeline = gctx.createComputePipeline(
             fs_distance_pl,
-            wgpu.ComputePipeline.Descriptor{
-                .compute = wgpu.ProgrammableStageDescriptor{
+            wgpu.ComputePipelineDescriptor{
+                .compute = .{
                     .module = fs_distance_sm,
                     .entry_point = "fs_distance_batch",
                 },
@@ -228,15 +228,15 @@ pub const P3GpuContext = struct {
 
         // PGL-action: bindings = (input: storage, output: storage_rw, transform: uniform)
         const pgl_action_bgl = gctx.createBindGroupLayout(&.{
-            zgpu.bufferEntry(0, .{ .storage = true }, .storage, false, 0),
-            zgpu.bufferEntry(1, .{ .storage = true }, .storage, false, 0),
-            zgpu.bufferEntry(2, .{ .uniform = true }, .uniform, false, 0),
+            zgpu.bufferEntry(0, .{ .compute = true }, .storage, false, 0),
+            zgpu.bufferEntry(1, .{ .compute = true }, .storage, false, 0),
+            zgpu.bufferEntry(2, .{ .compute = true }, .uniform, false, 0),
         });
         const pgl_action_pl = gctx.createPipelineLayout(&.{pgl_action_bgl});
         const pgl_action_pipeline = gctx.createComputePipeline(
             pgl_action_pl,
-            wgpu.ComputePipeline.Descriptor{
-                .compute = wgpu.ProgrammableStageDescriptor{
+            wgpu.ComputePipelineDescriptor{
+                .compute = .{
                     .module = pgl_action_sm,
                     .entry_point = "pgl_action_batch",
                 },
@@ -245,15 +245,15 @@ pub const P3GpuContext = struct {
 
         // Geodesic RK4: bindings = (states_in: storage, states_out: storage_rw, params: uniform)
         const geodesic_rk4_bgl = gctx.createBindGroupLayout(&.{
-            zgpu.bufferEntry(0, .{ .storage = true }, .storage, false, 0),
-            zgpu.bufferEntry(1, .{ .storage = true }, .storage, false, 0),
-            zgpu.bufferEntry(2, .{ .uniform = true }, .uniform, false, 0),
+            zgpu.bufferEntry(0, .{ .compute = true }, .storage, false, 0),
+            zgpu.bufferEntry(1, .{ .compute = true }, .storage, false, 0),
+            zgpu.bufferEntry(2, .{ .compute = true }, .uniform, false, 0),
         });
         const geodesic_rk4_pl = gctx.createPipelineLayout(&.{geodesic_rk4_bgl});
         const geodesic_rk4_pipeline = gctx.createComputePipeline(
             geodesic_rk4_pl,
-            wgpu.ComputePipeline.Descriptor{
-                .compute = wgpu.ProgrammableStageDescriptor{
+            wgpu.ComputePipelineDescriptor{
+                .compute = .{
                     .module = geodesic_rk4_sm,
                     .entry_point = "geodesic_rk4_step",
                 },
@@ -262,13 +262,13 @@ pub const P3GpuContext = struct {
 
         // Idempotent Newton: bindings = (matrices: storage_rw)
         const idempotent_newton_bgl = gctx.createBindGroupLayout(&.{
-            zgpu.bufferEntry(0, .{ .storage = true }, .storage, false, 0),
+            zgpu.bufferEntry(0, .{ .compute = true }, .storage, false, 0),
         });
         const idempotent_newton_pl = gctx.createPipelineLayout(&.{idempotent_newton_bgl});
         const idempotent_newton_pipeline = gctx.createComputePipeline(
             idempotent_newton_pl,
-            wgpu.ComputePipeline.Descriptor{
-                .compute = wgpu.ProgrammableStageDescriptor{
+            wgpu.ComputePipelineDescriptor{
+                .compute = .{
                     .module = idempotent_newton_sm,
                     .entry_point = "idempotent_newton_step",
                 },
@@ -278,7 +278,7 @@ pub const P3GpuContext = struct {
         // --- 3. CREATE RENDER PIPELINE ---
         // Dehomogenize vertex + P³ fragment
         const render_bgl = gctx.createBindGroupLayout(&.{
-            zgpu.bufferEntry(0, .{ .vertex = true }, .uniform, true, 0),
+            zgpu.bufferEntry(0, .{ .vertex = true, .fragment = true }, .uniform, true, 0),
         });
         const render_pl = gctx.createPipelineLayout(&.{render_bgl});
 
@@ -301,23 +301,23 @@ pub const P3GpuContext = struct {
         const render_pipeline = gctx.createRenderPipeline(
             render_pl,
             wgpu.RenderPipelineDescriptor{
-                .vertex = wgpu.VertexState{
+                .vertex = .{
                     .module = dehom_vertex_sm,
                     .entry_point = "dehomogenize_vertex",
                     .buffer_count = vertex_buffers.len,
                     .buffers = &vertex_buffers,
                 },
-                .primitive = wgpu.PrimitiveState{
+                .primitive = .{
                     .front_face = .ccw,
                     .cull_mode = .none,
                     .topology = .triangle_list,
                 },
-                .depth_stencil = &wgpu.DepthStencilState{
+                .depth_stencil = &.{
                     .format = .depth32_float,
                     .depth_write_enabled = true,
                     .depth_compare = .less,
                 },
-                .fragment = &wgpu.FragmentState{
+                .fragment = &.{
                     .module = p3_fragment_sm,
                     .entry_point = "p3_fragment",
                     .target_count = color_targets.len,
@@ -391,17 +391,21 @@ pub const P3GpuContext = struct {
         // --- 6. DEPTH TEXTURE ---
         const depth_texture = gctx.createTexture(.{
             .usage = .{ .render_attachment = true },
-            .dimension = .dim_2,
+            .dimension = .tdim_2d,
             .format = .depth32_float,
-            .width = gctx.swapchain_dimensions.width,
-            .height = gctx.swapchain_dimensions.height,
+            .size = .{
+                .width = gctx.swapchain_descriptor.width,
+                .height = gctx.swapchain_descriptor.height,
+                .depth_or_array_layers = 1,
+            },
         });
         const depth_texture_view = gctx.createTextureView(depth_texture, .{
             .format = .depth32_float,
-            .dimension = .dim_2,
+            .dimension = .tvdim_2d,
         });
 
-        return .{
+        const self = try allocator.create(P3GpuContext);
+        self.* = .{
             .gctx = gctx,
             .allocator = allocator,
             // Shader modules
@@ -453,13 +457,14 @@ pub const P3GpuContext = struct {
             .max_points = max_points,
             .max_transforms = max_transforms,
         };
+        return self;
     }
 
     // =====================================================================
     // DEINIT — ОСВОБОЖДАЕМ ВСЕ РЕСУРСЫ
     // =====================================================================
 
-    pub fn deinit(self: *P3GpuContext) void {
+    pub fn deinit(self: *P3GpuContext, allocator: std.mem.Allocator) void {
         // Release shader modules (raw wgpu objects)
         self.fs_distance_sm.release();
         self.pgl_action_sm.release();
@@ -469,7 +474,8 @@ pub const P3GpuContext = struct {
         self.p3_fragment_sm.release();
 
         // Release GPU context (destroys all handle-based resources)
-        self.gctx.deinit(self.allocator);
+        self.gctx.destroy(allocator);
+        allocator.destroy(self);
     }
 
     // =====================================================================
@@ -644,10 +650,10 @@ pub const P3GpuContext = struct {
             .depth_load_op = .clear,
             .depth_store_op = .store,
             .depth_clear_value = 1.0,
-            .stencil_load_op = .undefined,
-            .stencil_store_op = .undefined,
+            .stencil_load_op = .undef,
+            .stencil_store_op = .undef,
         };
-        const pass = encoder.beginRenderPass(&wgpu.RenderPassDescriptor{
+        const pass = encoder.beginRenderPass(wgpu.RenderPassDescriptor{
             .color_attachment_count = color_attachments.len,
             .color_attachments = &color_attachments,
             .depth_stencil_attachment = &depth_attachment,
@@ -676,14 +682,14 @@ pub const P3GpuContext = struct {
     }
 
     /// Present swapchain
-    pub fn present(self: *P3GpuContext) zgpu.GraphicsContext.PresentResult {
+    pub fn present(self: *P3GpuContext) @TypeOf(self.gctx.present()) {
         return self.gctx.present();
     }
 
     /// Recreate depth texture on resize
     pub fn recreateDepthTexture(self: *P3GpuContext) void {
-        const width = self.gctx.swapchain_dimensions.width;
-        const height = self.gctx.swapchain_dimensions.height;
+        const width = self.gctx.swapchain_descriptor.width;
+        const height = self.gctx.swapchain_descriptor.height;
 
         // Release old
         self.gctx.releaseResource(self.depth_texture_view);
@@ -692,14 +698,17 @@ pub const P3GpuContext = struct {
         // Create new
         self.depth_texture = self.gctx.createTexture(.{
             .usage = .{ .render_attachment = true },
-            .dimension = .dim_2,
+            .dimension = .tdim_2d,
             .format = .depth32_float,
-            .width = width,
-            .height = height,
+            .size = .{
+                .width = width,
+                .height = height,
+                .depth_or_array_layers = 1,
+            },
         });
         self.depth_texture_view = self.gctx.createTextureView(self.depth_texture, .{
             .format = .depth32_float,
-            .dimension = .dim_2,
+            .dimension = .tvdim_2d,
         });
     }
 

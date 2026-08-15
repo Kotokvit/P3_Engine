@@ -112,46 +112,85 @@ pub fn build(b: *std.Build) void {
     // ========================================================
     // EXECUTABLE TARGET — P³ Engine (с реальным GPU)
     // ========================================================
-    // Для сборки executable нужно добавить зависимости в build.zig.zon:
+    // Зависимости уже добавлены в build.zig.zon:
+    //   zglfw (commit d9c06187e8b2) — Zig 0.14.0 compatible
+    //   zgpu  (commit 96f3ce2229e4) — Zig 0.14.0 compatible (NOT main!)
+    //   dawn_x86_64_linux_gnu (lazy) — Dawn prebuilt binary
     //
-    //   zig fetch --save=zgpu      https://github.com/zig-gamedev/zgpu/archive/96f3ce2229e4836daec714a3f0b8c3c3218a6b2c.tar.gz
-    //   zig fetch --save=zglfw     https://github.com/zig-gamedev/zglfw/archive/82da052ccacec5f9b11b1f9ce4c9edc2ea0bb2a7.tar.gz
-    //   zig fetch --save=zmath     https://github.com/zig-gamedev/zmath/archive/666efb32f8bf06e46c19e0c8e6c18d37e26a462b.tar.gz
-    //   zig fetch --save=zpool     https://github.com/zig-gamedev/zpool/archive/7829cf02f78e8c39e19b802ccb47ed44037299c2.tar.gz
-    //   zig fetch --save=system_sdk https://github.com/zig-gamedev/system_sdk/archive/c0dbf11cdc17da5904ea8a17eadc54dee26567ec.tar.gz
-    //   zig build --fetch
-    //
-    // После этого раскомментировать блок GPU BUILD ниже и запустить:
-    //   zig build p3    — собрать бинарник
-    //   zig build run   — запустить движок
-    //
+    // zig build p3   — собрать бинарник
+    // zig build run  — запустить движок
     // ========================================================
-    // GPU BUILD (uncomment after fetching dependencies)
-    // ========================================================
-    //
-    // const zgpu_dep = b.dependency("zgpu", .{
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
-    // const zglfw_dep = b.dependency("zglfw", .{
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
-    //
-    // const exe = b.addExecutable(.{
-    //     .name = "p3-engine",
-    //     .root_source_file = b.path("src/p3_app.zig"),
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
-    // exe.root_module.addImport("zgpu", zgpu_dep.module("root"));
-    // exe.root_module.addImport("zglfw", zglfw_dep.module("root"));
-    // exe.linkLibrary(zgpu_dep.artifact("zdawn"));
-    // exe.linkLibrary(zglfw_dep.artifact("glfw"));
-    // b.installArtifact(exe);
-    //
-    // const run_cmd = b.addRunArtifact(exe);
-    // if (b.args) |args| run_cmd.addArgs(args);
-    // const run_step = b.step("run", "Run P³ Engine");
-    // run_step.dependOn(&run_cmd.step);
+
+    // --- zglfw (GLFW bindings for window/input) ---
+    const zglfw_dep = b.dependency("zglfw", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // --- zgpu (WebGPU/Dawn) ---
+    // CRITICAL: addLibraryPathsTo must be called BEFORE linkLibrary(zdawn)
+    // It adds the Dawn prebuilt library paths so the linker can find libdawn
+    const zgpu_dep = b.dependency("zgpu", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // --- P³ Engine executable ---
+    const exe = b.addExecutable(.{
+        .name = "p3-engine",
+        .root_source_file = b.path("src/p3_app.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // Add all P³ library modules as imports for the executable
+    inline for (lib_modules) |mod| {
+        const mod_name = mod.@"0";
+        const mod_path = mod.@"1";
+        exe.root_module.addImport(
+            b.fmt("p3_{s}", .{mod_name}),
+            b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                .root_source_file = b.path(mod_path),
+            }),
+        );
+    }
+    inline for (rt_modules) |mod| {
+        const mod_name = mod.@"0";
+        const mod_path = mod.@"1";
+        exe.root_module.addImport(
+            b.fmt("p3_{s}", .{mod_name}),
+            b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                .root_source_file = b.path(mod_path),
+            }),
+        );
+    }
+
+    // zgpu/zglfw imports — real GPU bindings
+    exe.root_module.addImport("zgpu", zgpu_dep.module("root"));
+    exe.root_module.addImport("zglfw", zglfw_dep.module("root"));
+
+    // Link Dawn WebGPU C++ library (MUST call addLibraryPathsTo first)
+    @import("zgpu").addLibraryPathsTo(exe);
+    exe.linkLibrary(zgpu_dep.artifact("zdawn"));
+
+    // Link GLFW C library
+    exe.linkLibrary(zglfw_dep.artifact("glfw"));
+
+    // Platform-specific system SDK paths (for Dawn linking)
+    // system_sdk is a transitive dep of zgpu/zglfw, resolved automatically
+    if (target.result.os.tag == .macos) {
+        // macOS needs framework paths — handled by zglfw/zgpu internally
+    }
+
+    b.installArtifact(exe);
+
+    // --- Build step: zig build p3 ---
+    const p3_step = b.step("p3", "Build P³ Engine executable");
+    p3_step.dependOn(&exe.step);
+
+    // --- Run step: zig build run ---
+    const run_cmd = b.addRunArtifact(exe);
+    if (b.args) |args| run_cmd.addArgs(args);
+    const run_step = b.step("run", "Run P³ Engine");
+    run_step.dependOn(&run_cmd.step);
 }
