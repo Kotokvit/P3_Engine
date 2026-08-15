@@ -482,8 +482,15 @@ test "Physics: Static body ignores force" {
 
 /// Символы Кристоффеля Γ^i_{jk} для FS-метрики на S³
 ///
-/// На S³ с индуцированной метрикой из R⁴:
-///   Γ^i_{jk} = −x^i · δ_{jk} / |x|²
+/// На S³ с индуцированной метрикой из R⁴ (ambient coordinates):
+///   Γ^i_{jk} = +x^i · δ_{jk} / |x|²
+///
+/// Доказательство: геодезическое уравнение ẍ = −|v|²·x
+///   ẍ^i = −Γ^i_{jk}·v^j·v^k = −|v|²·x^i
+///   ⟹ Γ^i_{jk}·v^j·v^k = |v|²·x^i
+///   Γ^i_{jk} = x^i·δ_{jk}/|x|² удовлетворяет:
+///   Σ_{jk} x^i·δ_{jk}·v^j·v^k/|x|² = x^i·|v|²/|x|²  ✓
+///
 /// (для точки на единичной сфере |x|² = 1)
 ///
 /// Возвращает 4×4×4 массив: gamma[i][j][k] = Γ^i_{jk}
@@ -497,12 +504,13 @@ pub fn christoffelSymbols(point: HomVec4) [4][4][4]f64 {
 
     const coords = [4]f64{ point.x, point.y, point.z, point.w };
 
-    // Γ^i_{jk} = −x^i · δ_{jk} / |x|²
+    // Γ^i_{jk} = +x^i · δ_{jk} / |x|²
+    // (знак +: центростремительное ускорение, тела остаются на S³)
     for (0..4) |i| {
         for (0..4) |j| {
             for (0..4) |k| {
                 if (j == k) {
-                    gamma[i][j][k] = -coords[i] / n_sq;
+                    gamma[i][j][k] = coords[i] / n_sq;
                 }
             }
         }
@@ -620,14 +628,14 @@ pub fn ricciTensor(
 test "Physics: Christoffel symbols at north pole" {
     const north_pole = HomVec4.init(0, 0, 0, 1);
     const gamma = christoffelSymbols(north_pole);
-    // At north pole (0,0,0,1): Γ^i_{jk} = −x^i·δ_{jk}/|x|²
+    // At north pole (0,0,0,1): Γ^i_{jk} = +x^i·δ_{jk}/|x|²
     // x^0=x^1=x^2=0, x^3=1, |x|²=1
-    // Γ^0_{00} = −x^0·δ_{00}/1 = −0·1 = 0
+    // Γ^0_{00} = +x^0·δ_{00}/1 = +0·1 = 0
     try std.testing.expectApproxEqAbs(gamma[0][0][0], 0.0, 1e-10);
-    // Γ^3_{00} = −x^3·δ_{00}/1 = −1·1 = −1
-    try std.testing.expectApproxEqAbs(gamma[3][0][0], -1.0, 1e-10);
-    // Γ^3_{11} = −x^3·δ_{11}/1 = −1
-    try std.testing.expectApproxEqAbs(gamma[3][1][1], -1.0, 1e-10);
+    // Γ^3_{00} = +x^3·δ_{00}/1 = +1·1 = +1
+    try std.testing.expectApproxEqAbs(gamma[3][0][0], 1.0, 1e-10);
+    // Γ^3_{11} = +x^3·δ_{11}/1 = +1
+    try std.testing.expectApproxEqAbs(gamma[3][1][1], 1.0, 1e-10);
     // Γ^0_{01} = 0 (j≠k, δ_{01}=0)
     try std.testing.expectApproxEqAbs(gamma[0][0][1], 0.0, 1e-10);
 }
@@ -645,10 +653,11 @@ test "Physics: Geodesic acceleration for pure radial" {
     const accel = geodesicAcceleration(point, velocity);
     // a^i = −Γ^i_{jk}·v^j·v^k
     // For j=k=0, v^0=1: a^i = −Γ^i_{00}
-    // a^0 = −Γ^0_{00} = 0
-    // a^3 = −Γ^3_{00} = 1
+    // a^0 = −Γ^0_{00} = −0 = 0
+    // a^3 = −Γ^3_{00} = −1 (центростремительное — внутрь сферы!)
+    // Проверка: ẍ = −|v|²·x = −1·(0,0,0,1) → accel.w = −1  ✓
     try std.testing.expectApproxEqAbs(accel.x, 0.0, 1e-10);
-    try std.testing.expectApproxEqAbs(accel.w, 1.0, 1e-10);
+    try std.testing.expectApproxEqAbs(accel.w, -1.0, 1e-10);
 }
 
 test "Physics: Sectional curvature on unit sphere" {
@@ -699,4 +708,56 @@ test "Physics: Riemann tensor symmetry R_{ijkl} = R_{klij}" {
     const R0_231 = riemannTensor(point, 0, 2, 3, 1);
     const R0_312 = riemannTensor(point, 0, 3, 1, 2);
     try std.testing.expectApproxEqAbs(R0_123 + R0_231 + R0_312, 0.0, 1e-10);
+}
+
+test "Physics: Geodesic acceleration matches ẍ = −|v|²·x (RK4 consistency)" {
+    // КРИТИЧЕСКИЙ ТЕСТ: geodesicAcceleration должен давать
+    // тот же результат, что и RK4-интегратор: ẍ = −|v|²·x
+    const point = HomVec4.init(0.6, 0.0, 0.0, 0.8).normalize(); // на S³
+    const velocity = HomVec4.init(0.0, 0.5, 0.3, 0.0); // касательный к S³
+
+    const accel = geodesicAcceleration(point, velocity);
+
+    // Прямая формула: ẍ = −|v|²·x
+    const speed_sq = velocity.x * velocity.x + velocity.y * velocity.y +
+        velocity.z * velocity.z + velocity.w * velocity.w;
+    const expected = HomVec4.init(
+        -speed_sq * point.x,
+        -speed_sq * point.y,
+        -speed_sq * point.z,
+        -speed_sq * point.w,
+    );
+
+    try std.testing.expectApproxEqAbs(accel.x, expected.x, 1e-10);
+    try std.testing.expectApproxEqAbs(accel.y, expected.y, 1e-10);
+    try std.testing.expectApproxEqAbs(accel.z, expected.z, 1e-10);
+    try std.testing.expectApproxEqAbs(accel.w, expected.w, 1e-10);
+}
+
+test "Physics: Geodesic acceleration is centripetal (stays on S³)" {
+    // Ускорение должно быть направлено К ЦЕНТРУ (вдоль −x),
+    // не от центра — иначе тела разлетаются со сферы
+    const point = HomVec4.init(0, 0, 0, 1);
+    const velocity = HomVec4.init(0.3, 0.4, 0.0, 0.0);
+    const accel = geodesicAcceleration(point, velocity);
+
+    // ⟨accel, point⟩ = ⟨−|v|²·x, x⟩ = −|v|²·|x|² = −|v|² < 0
+    // Отрицательное → ускорение направлено ВНУТРЬ сферы (центростремительное)
+    const inner = HomVec4.dot(accel, point);
+    try std.testing.expect(inner < 0); // центростремительное!
+
+    // ⟨accel, velocity⟩ = ⟨−|v|²·x, v⟩ = −|v|²·⟨x,v⟩ = 0
+    // (поскольку x⊥v для точки на S³)
+    const ortho = HomVec4.dot(accel, velocity);
+    try std.testing.expectApproxEqAbs(ortho, 0.0, 1e-10);
+}
+
+test "Physics: Gauss equation — R = K·n(n−1) for S³" {
+    // Тождество Гаусса: скалярная кривизна = K · n(n−1)
+    // Для S³: R = 1 · 3·2 = 6
+    const point = HomVec4.init(0.5, 0.5, 0.5, 0.5).normalize();
+    const K = sectionalCurvature(point);
+    const R = scalarCurvature(point);
+    try std.testing.expectApproxEqAbs(R, K * 3.0 * 2.0, 1e-10);
+    try std.testing.expectApproxEqAbs(R, 6.0, 1e-10);
 }

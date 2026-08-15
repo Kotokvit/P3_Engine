@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) void {
     // Фаза 3: ECS (из O3DE) + Scene Graph + Physics
     // Фаза 4: Serial (@typeInfo) + IO (VFS) + Jobs (parallel batch)
     //         + Differential Geometry (Christoffel, Riemann, Ricci)
+    // Фаза 5: Renderer (Forward+/Deferred P³ pipeline)
+    //         + P³ Camera + Frustum culling on S³ + FS-depth
     // ========================================================
 
     const modules = .{
@@ -35,6 +37,7 @@ pub fn build(b: *std.Build) void {
         .{ "io",          "src/p3_io.zig" },
         .{ "jobs",        "src/p3_jobs.zig" },
         .{ "rhi",         "src/p3_rhi.zig" },
+        .{ "renderer",    "src/p3_renderer.zig" },
     };
 
     // --- Generate test steps for all modules ---

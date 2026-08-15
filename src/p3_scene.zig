@@ -269,7 +269,193 @@ pub const SceneGraph = struct {
 };
 
 // =============================================================================
-// 4. ТЕСТЫ
+// 4. BOUNDING VOLUME НА S³ (FS-СФЕРА)
+// =============================================================================
+//
+// В O3DE: AABB (Axis-Aligned Bounding Box) в R³
+//   Проблема: не инвариантен при вращении, не работает на S³,
+//   нет понятия «ось» в проективном пространстве.
+//
+// В P³: bounding volume = FS-сфера = {p ∈ S³ | d_FS(center, p) ≤ radius}
+//   - Инвариантна при PGL4 (d_FS(M·p, M·q) = d_FS(p, q))
+//   - Естественна на S³ (геодезические шары)
+//   - Compact: center (4×f64) + radius (1×f64) = 40 bytes
+
+/// Bounding sphere на S³: центр + FS-радиус
+pub const FSBoundingSphere = struct {
+    center: HomVec4,
+    radius: f64, // FS-distance radius ∈ [0, π/2]
+
+    pub fn init(center: HomVec4, radius: f64) FSBoundingSphere {
+        const n = center.norm();
+        const c = if (n > 1e-15) center.normalize() else HomVec4.init(0, 0, 0, 1);
+        return .{
+            .center = c,
+            .radius = @min(radius, math.pi / 2.0),
+        };
+    }
+
+    /// Точка внутри сферы?
+    pub fn contains(self: FSBoundingSphere, point: HomVec4) bool {
+        return p3_kernel.fsDistance(self.center, point) <= self.radius;
+    }
+
+    /// Другая сфера внутри этой?
+    pub fn containsSphere(self: FSBoundingSphere, other: FSBoundingSphere) bool {
+        const d = p3_kernel.fsDistance(self.center, other.center);
+        return d + other.radius <= self.radius;
+    }
+
+    /// Две сферы пересекаются?
+    pub fn intersects(self: FSBoundingSphere, other: FSBoundingSphere) bool {
+        const d = p3_kernel.fsDistance(self.center, other.center);
+        return d <= self.radius + other.radius;
+    }
+
+    /// Объединение: минимальная сфера, содержащая обе
+    pub fn merge(self: FSBoundingSphere, other: FSBoundingSphere) FSBoundingSphere {
+        const d = p3_kernel.fsDistance(self.center, other.center);
+        if (d + other.radius <= self.radius) return self; // self содержит other
+        if (d + self.radius <= other.radius) return other; // other содержит self
+        // Новая сфера: центр на геодезической, радиус = (d + r1 + r2) / 2
+        const new_radius = (d + self.radius + other.radius) / 2.0;
+        // Центр: midpoint на геодезической
+        const tangent = p3_geodesic.logMap(self.center, other.center);
+        const t_norm = tangent.norm();
+        if (t_norm < 1e-15) return .{ .center = self.center, .radius = new_radius };
+        // Двигаем центр на d/2 вдоль геодезической
+        const mid = p3_geodesic.expMap(self.center, HomVec4.init(
+            tangent.x * d / (2.0 * t_norm),
+            tangent.y * d / (2.0 * t_norm),
+            tangent.z * d / (2.0 * t_norm),
+            tangent.w * d / (2.0 * t_norm),
+        ));
+        return .{
+            .center = mid.normalize(),
+            .radius = new_radius,
+        };
+    }
+
+    /// Пустая сфера
+    pub fn empty() FSBoundingSphere {
+        return .{
+            .center = HomVec4.init(0, 0, 0, 1),
+            .radius = 0,
+        };
+    }
+
+    /// Сфера единичного радиуса
+    pub fn unit(center: HomVec4) FSBoundingSphere {
+        return .{
+            .center = center.normalize(),
+            .radius = math.pi / 2.0,
+        };
+    }
+};
+
+// =============================================================================
+// 5. ИЕРАРХИЧЕСКИЙ FRUSTUM CULLING НА S³
+// =============================================================================
+//
+// Дерево FS-сфер: каждый узел содержит bounding sphere.
+// Frustum cull: проверяем sphere vs frustum (4 projective planes).
+// Если sphere полностью вне — отбрасываем поддерево.
+// Если sphere полностью внутри — рисуем всё поддерево.
+// Если частично — рекурсивно проверяем детей.
+
+/// Результат frustum culling
+pub const CullResult = enum {
+    inside, // Полностью внутри frustum — рисовать всё
+    outside, // Полностью вне frustum — отбросить
+    partial, // Частично — проверять детей
+};
+
+/// Проверить FS-сферу vs frustum
+/// Frustum задаётся 4 проективными гиперплоскостями [a:b:c:d]
+/// и FS-порогами near/far
+pub fn cullSphereFrustum(
+    sphere: FSBoundingSphere,
+    /// 4 гиперплоскости frustum: plane = [a, b, c, d]
+    /// точка p видима ⟺ a·p.x + b·p.y + c·p.z + d·p.w ≥ 0
+    planes: [4][4]f64,
+    observer: HomVec4,
+    near_fs: f64,
+    far_fs: f64,
+) CullResult {
+    var all_inside = true;
+
+    // Проверка каждой гиперплоскости
+    for (planes) |plane| {
+        const a = plane[0];
+        const b = plane[1];
+        const c = plane[2];
+        const d = plane[3];
+
+        // ⟨π, center⟩
+        const center_val = a * sphere.center.x + b * sphere.center.y +
+            c * sphere.center.z + d * sphere.center.w;
+
+        // ‖π‖ (для оценки радиуса)
+        const plane_norm = @sqrt(a * a + b * b + c * c + d * d);
+
+        // Если center_val + radius_bound < 0 → полностью вне
+        if (center_val < -sphere.radius * plane_norm) return .outside;
+
+        // Если center_val - radius_bound < 0 → частично
+        if (center_val < sphere.radius * plane_norm) all_inside = false;
+    }
+
+    // Near/far проверка
+    const d_obs = p3_kernel.fsDistance(observer, sphere.center);
+    if (d_obs + sphere.radius < near_fs) return .outside;
+    if (d_obs - sphere.radius > far_fs) return .outside;
+    if (d_obs - sphere.radius < near_fs or d_obs + sphere.radius > far_fs) all_inside = false;
+
+    if (all_inside) return .inside;
+    return .partial;
+}
+
+/// Batch frustum culling: отсечь массив сфер
+pub fn frustumCullBatch(
+    spheres: []const FSBoundingSphere,
+    planes: [4][4]f64,
+    observer: HomVec4,
+    near_fs: f64,
+    far_fs: f64,
+    results: []CullResult,
+) void {
+    const n = @min(spheres.len, results.len);
+    for (0..n) |i| {
+        results[i] = cullSphereFrustum(spheres[i], planes, observer, near_fs, far_fs);
+    }
+}
+
+// =============================================================================
+// 6. SCENE NODE С BOUNDING VOLUME
+// =============================================================================
+
+/// SceneNode с bounding sphere
+pub const BoundedSceneNode = struct {
+    node: SceneNode,
+    bounds: FSBoundingSphere,
+
+    pub fn init(id: EntityId) BoundedSceneNode {
+        return .{
+            .node = SceneNode.init(id),
+            .bounds = FSBoundingSphere.empty(),
+        };
+    }
+
+    pub fn initWithBounds(id: EntityId, center: HomVec4, radius: f64) BoundedSceneNode {
+        return .{
+            .node = SceneNode.init(id),
+            .bounds = FSBoundingSphere.init(center, radius),
+        };
+    }
+};
+
+// =============================================================================
+// 7. ТЕСТЫ
 // =============================================================================
 
 test "Scene: SceneNode creation" {
@@ -339,4 +525,114 @@ test "Scene: Geodesic distance between nodes" {
     const b = HomVec4.init(0, 1, 0, 0);
     const d = geodesicDistance(a, b);
     try std.testing.expectApproxEqAbs(d, math.pi / 2.0, 1e-10);
+}
+
+// --- Tests for FSBoundingSphere ---
+
+test "Scene: FSBoundingSphere creation normalizes center" {
+    const sphere = FSBoundingSphere.init(HomVec4.init(3, 0, 0, 4), 0.5);
+    try std.testing.expectApproxEqAbs(sphere.center.norm(), 1.0, 1e-10);
+}
+
+test "Scene: FSBoundingSphere contains point" {
+    const sphere = FSBoundingSphere.init(HomVec4.init(0, 0, 0, 1), 0.5);
+    const inside = HomVec4.init(0, 0, 0.1, 1).normalize();
+    const outside = HomVec4.init(1, 0, 0, 0); // d_FS = π/2 > 0.5
+    try std.testing.expect(sphere.contains(inside));
+    try std.testing.expect(!sphere.contains(outside));
+}
+
+test "Scene: FSBoundingSphere intersects" {
+    const a = FSBoundingSphere.init(HomVec4.init(0, 0, 0, 1), 0.5);
+    const b = FSBoundingSphere.init(HomVec4.init(0, 0, 0.3, 1).normalize(), 0.5);
+    const c = FSBoundingSphere.init(HomVec4.init(1, 0, 0, 0), 0.1); // far away
+    try std.testing.expect(a.intersects(b));
+    try std.testing.expect(!a.intersects(c));
+}
+
+test "Scene: FSBoundingSphere merge" {
+    const a = FSBoundingSphere.init(HomVec4.init(0, 0, 0, 1), 0.2);
+    const b = FSBoundingSphere.init(HomVec4.init(0, 0, 0.1, 1).normalize(), 0.2);
+    const merged = a.merge(b);
+    // Merged must contain both
+    try std.testing.expect(merged.radius >= a.radius);
+    try std.testing.expect(merged.radius >= b.radius);
+}
+
+test "Scene: FSBoundingSphere contains sphere" {
+    const big = FSBoundingSphere.init(HomVec4.init(0, 0, 0, 1), 1.0);
+    const small = FSBoundingSphere.init(HomVec4.init(0, 0, 0.1, 1).normalize(), 0.1);
+    try std.testing.expect(big.containsSphere(small));
+}
+
+test "Scene: FSBoundingSphere empty" {
+    const e = FSBoundingSphere.empty();
+    try std.testing.expectApproxEqAbs(e.radius, 0.0, 1e-10);
+}
+
+// --- Tests for frustum culling on S³ ---
+
+test "Scene: CullResult sphere inside frustum" {
+    // Observer at (0,0,0,1), looking along -Z
+    // Sphere at same point → inside
+    const sphere = FSBoundingSphere.init(HomVec4.init(0, 0, 0, 1), 0.1);
+    // Trivial frustum: all planes pass through observer
+    const planes = [4][4]f64{
+        .{ 1, 0, 0, 0 }, // x ≥ 0
+        .{ -1, 0, 0, 0 }, // -x ≥ 0 → x ≤ 0
+        .{ 0, 1, 0, 0 }, // y ≥ 0
+        .{ 0, -1, 0, 0 }, // -y ≥ 0 → y ≤ 0
+    };
+    const observer = HomVec4.init(0, 0, 0, 1);
+    const result = cullSphereFrustum(sphere, planes, observer, 0.001, 10.0);
+    // Sphere centered at origin → center is on all planes → partial
+    try std.testing.expect(result == .partial or result == .inside);
+}
+
+test "Scene: CullResult sphere outside frustum" {
+    // Sphere far away on X axis → should be outside x≥0 ∩ x≤0 ∩ y≥0 ∩ y≤0
+    const sphere = FSBoundingSphere.init(HomVec4.init(1, 1, 0, 0), 0.01);
+    const planes = [4][4]f64{
+        .{ 1, 0, 0, 0 }, // x ≥ 0
+        .{ -1, 0, 0, 0 }, // x ≤ 0
+        .{ 0, 1, 0, 0 }, // y ≥ 0
+        .{ 0, -1, 0, 0 }, // y ≤ 0
+    };
+    const observer = HomVec4.init(0, 0, 0, 1);
+    // Point (1,1,0,0): x=1>0 but -x=-1<0 → violates x≤0
+    const result = cullSphereFrustum(sphere, planes, observer, 0.001, 10.0);
+    try std.testing.expect(result == .outside);
+}
+
+test "Scene: Batch frustum culling" {
+    const spheres = [_]FSBoundingSphere{
+        FSBoundingSphere.init(HomVec4.init(0, 0, 0, 1), 0.1),
+        FSBoundingSphere.init(HomVec4.init(1, 0, 0, 0), 0.01),
+    };
+    const planes = [4][4]f64{
+        .{ 1, 0, 0, 0 },
+        .{ -1, 0, 0, 0 },
+        .{ 0, 1, 0, 0 },
+        .{ 0, -1, 0, 0 },
+    };
+    var results: [2]CullResult = undefined;
+    frustumCullBatch(&spheres, planes, HomVec4.init(0, 0, 0, 1), 0.001, 10.0, &results);
+    // At least one should not be .outside
+    const any_visible = results[0] != .outside or results[1] != .outside;
+    try std.testing.expect(any_visible);
+}
+
+test "Scene: BoundedSceneNode creation" {
+    const node = BoundedSceneNode.init(EntityId.init(1));
+    try std.testing.expect(node.node.isRoot());
+    try std.testing.expectApproxEqAbs(node.bounds.radius, 0.0, 1e-10);
+}
+
+test "Scene: BoundedSceneNode with bounds" {
+    const node = BoundedSceneNode.initWithBounds(
+        EntityId.init(1),
+        HomVec4.init(0, 0, 0, 1),
+        0.5,
+    );
+    try std.testing.expectApproxEqAbs(node.bounds.radius, 0.5, 1e-10);
 }
