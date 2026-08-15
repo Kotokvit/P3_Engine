@@ -117,11 +117,24 @@ pub const GraphicsContext = struct {
         _ = self;
         _ = allocator;
     }
-    pub fn create(allocator: std.mem.Allocator, desc: anytype, opts: anytype) !GraphicsContext {
-        _ = allocator;
+    pub const WindowProvider = struct {
+        window: *const anyopaque,
+        fn_getTime: *const anyopaque,
+        fn_getFramebufferSize: *const anyopaque,
+        fn_getWin32Window: *const anyopaque,
+        fn_getX11Display: *const anyopaque,
+        fn_getX11Window: *const anyopaque,
+        fn_getWaylandDisplay: *const anyopaque,
+        fn_getWaylandSurface: *const anyopaque,
+        fn_getCocoaWindow: *const anyopaque,
+    };
+
+    pub fn create(allocator: std.mem.Allocator, desc: WindowProvider, opts: anytype) !*GraphicsContext {
         _ = desc;
         _ = opts;
-        return .{};
+        const gctx = try allocator.create(GraphicsContext);
+        gctx.* = .{};
+        return gctx;
     }
     pub fn present(self: *GraphicsContext) PresentResult {
         _ = self;

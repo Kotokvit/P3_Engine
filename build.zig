@@ -121,21 +121,7 @@ pub fn build(b: *std.Build) void {
     // zig build run  — запустить движок
     // ========================================================
 
-    // --- zglfw (GLFW bindings for window/input) ---
-    const zglfw_dep = b.dependency("zglfw", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // --- zgpu (WebGPU/Dawn) ---
-    // CRITICAL: addLibraryPathsTo must be called BEFORE linkLibrary(zdawn)
-    // It adds the Dawn prebuilt library paths so the linker can find libdawn
-    const zgpu_dep = b.dependency("zgpu", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
-    // --- P³ Engine executable ---
+    // --- P³ Engine executable (headless/stub support) ---
     const exe = b.addExecutable(.{
         .name = "p3-engine",
         .root_source_file = b.path("src/p3_app.zig"),
@@ -165,22 +151,9 @@ pub fn build(b: *std.Build) void {
         );
     }
 
-    // zgpu/zglfw imports — real GPU bindings
-    exe.root_module.addImport("zgpu", zgpu_dep.module("root"));
-    exe.root_module.addImport("zglfw", zglfw_dep.module("root"));
-
-    // Link Dawn WebGPU C++ library (MUST call addLibraryPathsTo first)
-    @import("zgpu").addLibraryPathsTo(exe);
-    exe.linkLibrary(zgpu_dep.artifact("zdawn"));
-
-    // Link GLFW C library
-    exe.linkLibrary(zglfw_dep.artifact("glfw"));
-
-    // Platform-specific system SDK paths (for Dawn linking)
-    // system_sdk is a transitive dep of zgpu/zglfw, resolved automatically
-    if (target.result.os.tag == .macos) {
-        // macOS needs framework paths — handled by zglfw/zgpu internally
-    }
+    // zgpu/zglfw stub imports for headless / no-display execution
+    exe.root_module.addImport("zgpu", zgpu_stub);
+    exe.root_module.addImport("zglfw", zglfw_stub);
 
     b.installArtifact(exe);
 
@@ -193,4 +166,38 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_cmd.addArgs(args);
     const run_step = b.step("run", "Run P³ Engine");
     run_step.dependOn(&run_cmd.step);
+
+    // --- Demo Window: zig build demo / zig build run-demo (Raylib 3D Live Viewport) ---
+    const demo_exe = b.addExecutable(.{
+        .name = "p3-demo-window",
+        .root_source_file = b.path("src/demo_window.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    inline for (lib_modules) |mod| {
+        const mod_name = mod.@"0";
+        const mod_path = mod.@"1";
+        demo_exe.root_module.addImport(
+            b.fmt("p3_{s}", .{mod_name}),
+            b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                .root_source_file = b.path(mod_path),
+            }),
+        );
+    }
+    demo_exe.linkLibC();
+    demo_exe.linkSystemLibrary("raylib");
+    demo_exe.linkSystemLibrary("GL");
+    demo_exe.linkSystemLibrary("m");
+    demo_exe.linkSystemLibrary("pthread");
+    demo_exe.linkSystemLibrary("dl");
+    demo_exe.linkSystemLibrary("rt");
+    demo_exe.linkSystemLibrary("X11");
+    b.installArtifact(demo_exe);
+
+    const demo_step = b.step("demo", "Build P³ Engine Raylib live viewport demo");
+    demo_step.dependOn(&demo_exe.step);
+
+    const run_demo = b.addRunArtifact(demo_exe);
+    const run_demo_step = b.step("run-demo", "Run P³ Engine live viewport demo");
+    run_demo_step.dependOn(&run_demo.step);
 }

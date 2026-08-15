@@ -88,9 +88,19 @@ pub fn windowHint(hint: WindowHint, value: anytype) void {
     _ = value;
 }
 
+pub fn createWindow(width: c_int, height: c_int, title: [:0]const u8, monitor: ?*Monitor) !*Window {
+    _ = width;
+    _ = height;
+    _ = title;
+    _ = monitor;
+    const dummy = try std.heap.page_allocator.create(Window);
+    return dummy;
+}
+
 pub const WindowHint = enum(c_int) {
     client_api = 0x22001,
     resizable = 0x20003,
+    no_api = 0,
     _,
 };
 
