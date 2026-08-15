@@ -483,12 +483,12 @@ pub const GraphicsContext = struct {
         window: *anyopaque,
         fn_getTime: *const fn () f64,
         fn_getFramebufferSize: *const fn (window: *const anyopaque) [2]u32,
-        fn_getWin32Window: *const fn (window: *const anyopaque) callconv(.c) *anyopaque = undefined,
-        fn_getX11Display: *const fn () callconv(.c) *anyopaque = undefined,
-        fn_getX11Window: *const fn (window: *const anyopaque) callconv(.c) u32 = undefined,
-        fn_getWaylandDisplay: ?*const fn () callconv(.c) *anyopaque = null,
-        fn_getWaylandSurface: ?*const fn (window: *const anyopaque) callconv(.c) *anyopaque = null,
-        fn_getCocoaWindow: *const fn (window: *const anyopaque) callconv(.c) ?*anyopaque = undefined,
+        fn_getWin32Window: *const fn (window: *const anyopaque) callconv(.C) *anyopaque = undefined,
+        fn_getX11Display: *const fn () callconv(.C) *anyopaque = undefined,
+        fn_getX11Window: *const fn (window: *const anyopaque) callconv(.C) u32 = undefined,
+        fn_getWaylandDisplay: ?*const fn () callconv(.C) *anyopaque = null,
+        fn_getWaylandSurface: ?*const fn (window: *const anyopaque) callconv(.C) *anyopaque = null,
+        fn_getCocoaWindow: *const fn (window: *const anyopaque) callconv(.C) ?*anyopaque = undefined,
     };
 
     pub fn create(allocator: std.mem.Allocator, window_provider: WindowProvider, opts: anytype) !*GraphicsContext {

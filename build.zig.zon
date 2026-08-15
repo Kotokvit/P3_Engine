@@ -1,22 +1,6 @@
 .{
-    .name = .P3_Engine,
-    .fingerprint = 0x144226003e00674f,
+    .name = "P3_Engine",
     .version = "0.7.0",
-    .dependencies = .{
-        .zglfw = .{
-            .url = "https://github.com/zig-gamedev/zglfw/archive/d9c06187e8b2.tar.gz",
-            .hash = "zglfw-0.10.0-dev-zgVDNC64IQCeL-_eVOA27Wa50WVitrJswOZVvgcXmIsy",
-        },
-        .zgpu = .{
-            .url = "https://github.com/zig-gamedev/zgpu/archive/96f3ce2229e4.tar.gz",
-            .hash = "zgpu-0.12.0-dev-nqFT5LqgCACR_1wEhi7rveY3ocKJczfRaXQoisCmpohn",
-        },
-        .dawn_x86_64_linux_gnu = .{
-            .url = "https://github.com/michal-z/webgpu_dawn-x86_64-linux-gnu/archive/7d70db023bf254546024629cbec5ee6113e12a42.tar.gz",
-            .hash = "N-V-__8AAK7XUQNKNRnv1J6i189jtURJKjp3HTftoyD4Y4CB",
-            .lazy = true,
-        },
-    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
