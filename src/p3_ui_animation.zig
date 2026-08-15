@@ -171,12 +171,21 @@ pub const BoolKey = struct {
 
 /// Трек для boolean значений (step interpolation only).
 pub const BoolTrack = struct {
+<<<<<<< Updated upstream
     keys: std.ArrayList(BoolKey),
+=======
+    pub const Key = struct { time: f32, value: bool };
+    keys: std.ArrayList(Key),
+>>>>>>> Stashed changes
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) BoolTrack {
         return .{
+<<<<<<< Updated upstream
             .keys = std.ArrayList(BoolKey).init(allocator),
+=======
+            .keys = std.ArrayList(Key).init(allocator),
+>>>>>>> Stashed changes
             .allocator = allocator,
         };
     }
