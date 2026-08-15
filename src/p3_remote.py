@@ -31,6 +31,7 @@ class P3RemoteHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        params = urllib.parse.parse_qs(parsed.query)
 
         if path == '/screenshot':
             self.handle_screenshot()
@@ -38,6 +39,13 @@ class P3RemoteHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_processes()
         elif path == '/status':
             self.handle_status()
+        elif path == '/cmd':
+            # GET /cmd?q=command — для Funnel (POST не всегда проходит)
+            cmd = params.get('q', [''])[0]
+            if cmd:
+                self.handle_cmd_raw(cmd)
+            else:
+                self.send_json({"error": "use /cmd?q=your+command"}, 400)
         else:
             # Default: serve files
             super().do_GET()
@@ -52,7 +60,7 @@ class P3RemoteHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, f"POST {path} not found")
 
     def handle_cmd(self):
-        """Выполнить shell команду и вернуть результат."""
+        """Выполнить shell команду (POST) и вернуть результат."""
         try:
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length)
@@ -60,10 +68,19 @@ class P3RemoteHandler(http.server.SimpleHTTPRequestHandler):
             cmd = data.get('cmd', '')
             cwd = data.get('cwd', str(BASE_DIR))
             timeout = data.get('timeout', 30)
+            self.handle_cmd_raw(cmd, cwd, timeout)
+        except Exception as e:
+            self.send_json({"error": str(e)}, 500)
 
+    def handle_cmd_raw(self, cmd, cwd=None, timeout=30):
+        """Выполнить shell команду и вернуть результат."""
+        try:
             if not cmd:
                 self.send_json({"error": "no cmd provided"}, 400)
                 return
+
+            if cwd is None:
+                cwd = str(BASE_DIR)
 
             result = subprocess.run(
                 cmd, shell=True, capture_output=True, text=True,
@@ -71,7 +88,7 @@ class P3RemoteHandler(http.server.SimpleHTTPRequestHandler):
             )
 
             self.send_json({
-                "stdout": result.stdout[-10000:],  # Trim large output
+                "stdout": result.stdout[-10000:],
                 "stderr": result.stderr[-10000:],
                 "returncode": result.returncode,
                 "cmd": cmd,
