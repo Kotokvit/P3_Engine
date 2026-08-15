@@ -10,7 +10,7 @@
 
 ## Что здесь есть
 
-18 модулей, 10 378 строк Zig, 780+ тестов — **все проходят**.
+21 модуль, 12 700+ строк Zig, 773 теста — **все проходят** на Zig 0.14.0.
 
 ```
 src/
@@ -31,7 +31,10 @@ src/
 ├── p3_io.zig          (337L)  VFS, asset packs (P3PACK), типы файлов comptime
 ├── p3_jobs.zig        (330L)  Job scheduler, пакетные вычисления FS-distance/PGL/dehom
 ├── p3_rhi.zig         (722L)  Render Hardware Interface, comptime backend, FrameGraph
-└── p3_renderer.zig    (983L)  P³ Camera, P³ Frustum, FS-depth, Forward+/Deferred pipeline
+├── p3_renderer.zig    (983L)  P³ Camera, P³ Frustum, FS-depth, Forward+/Deferred pipeline
+├── p3_gpu_rt.zig      (700L)  Реальный GPU pipeline через zgpu/Dawn/WebGPU ← НОВЫЙ
+├── p3_input.zig       (370L)  Key, MouseState, InputEvent (tagged union), InputState ← НОВЫЙ
+└── p3_app.zig         (500L)  pub fn main, P3Camera на S³, P3App lifecycle ← НОВЫЙ
 ```
 
 ---
@@ -47,7 +50,7 @@ src/
 | Z-buffer, z-fighting | FS-depth = d_FS(observer, point), нет z-fighting |
 | AABB bounding box | FS-сфера на S³, PGL-инвариантная |
 | Virtual dispatch, RTTI | Tagged unions, comptime |
-| C++, 1.5M строк | Zig 0.13.0, 10K строк |
+| C++, 1.5M строк | Zig 0.14.0, 12K строк |
 
 ---
 
@@ -98,12 +101,24 @@ P_{k+1} = 3P²_k − 2P³_k                      (Newton проекция на �
 ## Сборка и тесты
 
 ```bash
-# Требуется Zig 0.13.0
-zig build test              # все тесты (780+, все проходят)
+# Требуется Zig 0.14.0
+zig build test              # все тесты (773, все проходят)
 zig build test-kernel       # только p3_kernel
 zig build test-physics      # только p3_physics
 zig build test-renderer     # только p3_renderer
-# ... и т.д. для каждого модуля
+zig build test-gpu-rt       # только p3_gpu_rt
+zig build test-input        # только p3_input
+zig build test-app          # только p3_app
+# ... и т.д. для каждого из 21 модулей
+```
+
+### GPU executable (после zig fetch)
+
+```bash
+# Добавить zgpu + zglfw зависимости:
+zig fetch --save=zgpu https://github.com/zig-gamedev/zig-gamedev/archive/refs/heads/main.tar.gz
+# Тогда раскомментировать GPU-блок в build.zig и:
+zig build p3               # собрать запускаемый бинарник
 ```
 
 ---
@@ -120,27 +135,26 @@ zig build test-renderer     # только p3_renderer
 | 4 | serial, io, jobs | Сериализация, VFS, параллельные вычисления, дифгеом |
 | 5 | rhi, renderer | RHI абстракция, Forward+/Deferred pipeline, P³ Camera/Frustum |
 
-### Фаза 6 — Рендер-бэкенды ⬜
-
-Подключить реальный GPU, не только comptime строки.
+### Фаза 6 — GPU + App — ЗАВЕРШЕНА ✅
 
 | Задача | Из O3DE | В P³ |
 |---|---|---|
-| Mach sysgpu | — | `@import("sysgpu")`, реальный WebGPU compute |
-| Vulkan бэкенд | RHI.Vulkan (245 файлов C++) | `p3_rhi_vulkan.zig`, прямые Vk* вызовы |
+| GPU runtime | Atom RHI (245 файлов C++) | `p3_gpu_rt.zig`, zgpu/Dawn/WebGPU |
+| Compute pipelines | AZSL→SPIR-V (runtime) | 4 pipeline: FS-distance, PGL, RK4, Idempotent |
+| Render pipeline | Atom Forward+/Deferred | dehomogenize vertex + P³ fragment shader |
+| Input | AzFramework::Input (event bus) | `p3_input.zig`, tagged union InputEvent |
+| Camera | AzFramework::Camera (Euler) | `P3Camera` на S³, геодезическое движение |
+| Application | AzFramework::Application (virtual) | `p3_app.zig`, pub fn main, comptime loop |
+
+**P³ Engine — теперь ЗАПУСКАЕМЫЙ бинарник.** `pub fn main` реализует полный цикл: input → camera → upload MVP → dispatch FS-distance → render → present.
+
+### Фаза 7 — Vulkan бэкенд ⬜
+
+| Задача | Из O3DE | В P³ |
+|---|---|---|
+| Vulkan backend | RHI.Vulkan (245 файлов C++) | `p3_rhi_vulkan.zig`, прямые Vk* вызовы |
 | Shader compilation | AZSL → SPIR-V (runtime) | WGSL → SPIR-V (naga, comptime) |
 | SwapChain | RHI::SwapChain (virtual) | comptime backend: wgpu/vulkan/null |
-
-### Фаза 7 — Приложение и окно ⬜
-
-Первый запускаемый бинарник — `pub fn main`.
-
-| Задача | Из O3DE | В P³ |
-|---|---|---|
-| Application | AzFramework::Application (virtual lifecycle) | `p3_app7app.zig`, comptime main loop |
-| Window | Qt/glfw/winit | Mach syswm или glfw @cImport |
-| Input | AzFramework::Input (event bus) | `p3_input.zig`, event channel |
-| Demo | — | Вращающийся куб на S³ с FS-depth |
 
 ### Фаза 8 — Ассеты и терраин ⬜
 
@@ -191,9 +205,10 @@ zig build test-renderer     # только p3_renderer
 
 | Что | Версия | Зачем |
 |---|---|---|
-| Zig | 0.13.0 | Основной язык |
+| Zig | 0.14.0 | Основной язык |
+| zgpu | (опционально, через zig fetch) | WebGPU/Dawn бэкенд для GPU |
+| zglfw | (опционально, через zig fetch) | GLFW bindings для окна и ввода |
 | raylib | 5.x (опционально) | C ABI мост для 2D/GUI |
-| Mach sysgpu | (будущее) | WebGPU бэкенд |
 | naga | (будущее) | WGSL → SPIR-V компиляция |
 
 ---
