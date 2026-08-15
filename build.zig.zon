@@ -1,0 +1,19 @@
+.{
+    .name = .P3_Engine,
+    .version = "0.7.0",
+    .fingerprint = 0x14422600e72726ec,
+    .minimum_zig_version = "0.14.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+    .dependencies = .{
+        // ============================================================
+        // GPU dependencies are added via `zig fetch --save=<name> <url>`
+        // See README.md for setup instructions.
+        // Tests (`zig build test`) do NOT require any dependencies.
+        // ============================================================
+    },
+}
