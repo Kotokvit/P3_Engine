@@ -64,6 +64,16 @@ pub fn build(b: *std.Build) void {
         .{ "ui_layout",   "src/p3_ui_layout.zig" },
         .{ "ui_canvas",   "src/p3_ui_canvas.zig" },
         .{ "ui_draw",     "src/p3_ui_draw.zig" },
+        // Phase 8C: GUI Interactables from O3DE LyShine (full port)
+        .{ "ui_interactable", "src/p3_ui_interactable.zig" },
+        .{ "ui_button",       "src/p3_ui_button.zig" },
+        .{ "ui_image",        "src/p3_ui_image.zig" },
+        .{ "ui_text",         "src/p3_ui_text.zig" },
+        .{ "ui_scroll",       "src/p3_ui_scroll.zig" },
+        .{ "ui_dragdrop",     "src/p3_ui_dragdrop.zig" },
+        .{ "ui_animation",    "src/p3_ui_animation.zig" },
+        .{ "ui_navigation",   "src/p3_ui_navigation.zig" },
+        .{ "ui_render",       "src/p3_ui_render.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
