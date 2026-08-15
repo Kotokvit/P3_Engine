@@ -40,6 +40,8 @@ pub fn build(b: *std.Build) void {
         .{ "safety",      "src/p3_safety.zig" },
         .{ "gpu",         "src/p3_gpu.zig" },
         .{ "raylib",      "src/p3_raylib.zig" },
+        .{ "quaternion",  "src/p3_quaternion.zig" },
+        .{ "scale",       "src/p3_scale.zig" },
         .{ "invariant",   "src/p3_invariant.zig" },
         .{ "algebra",     "src/p3_algebra.zig" },
         .{ "ecs",         "src/p3_ecs.zig" },
@@ -50,6 +52,16 @@ pub fn build(b: *std.Build) void {
         .{ "jobs",        "src/p3_jobs.zig" },
         .{ "rhi",         "src/p3_rhi.zig" },
         .{ "renderer",    "src/p3_renderer.zig" },
+        // Phase 8A: Math from Eteryya (causal, poler, null-fluid, PGA)
+        .{ "causal",      "src/p3_causal.zig" },
+        .{ "poler",       "src/p3_poler.zig" },
+        .{ "null_fluid",  "src/p3_null_fluid.zig" },
+        .{ "pga",         "src/p3_pga.zig" },
+        // Phase 8B: GUI from O3DE LyShine (transform, layout, canvas, draw)
+        .{ "ui_transform", "src/p3_ui_transform.zig" },
+        .{ "ui_layout",   "src/p3_ui_layout.zig" },
+        .{ "ui_canvas",   "src/p3_ui_canvas.zig" },
+        .{ "ui_draw",     "src/p3_ui_draw.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
