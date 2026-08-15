@@ -244,7 +244,7 @@ fn drawInputField(x: i32, y: i32, w: i32, h: i32, text: []const u8, active: bool
     }
     // Cursor
     if (active and cursor_visible) {
-        const text_w = if (text.len > 0) rl.MeasureText(@ptrCast((std.mem.sliceTo(@as([*:0]u8, @ptrCast(text.ptr)), 0))), 18) else 0;
+        const text_w = if (text.len > 0) rl.MeasureText(@ptrCast((std.mem.sliceTo(@as([*:0]u8, @constCast(@ptrCast(text.ptr))), 0))), 18) else 0;
         rl.DrawLine(x + 8 + text_w, y + 6, x + 8 + text_w, y + h - 6, theme.accent);
     }
 }
