@@ -156,17 +156,27 @@ pub const FloatTrack = struct {
 };
 
 // =============================================================================
-// 5. BOOL TRACK
+// 5. BOOL KEY
+// =============================================================================
+
+/// Ключевой кадр для boolean трека.
+pub const BoolKey = struct {
+    time: f32,
+    value: bool,
+};
+
+// =============================================================================
+// 6. BOOL TRACK
 // =============================================================================
 
 /// Трек для boolean значений (step interpolation only).
 pub const BoolTrack = struct {
-    keys: std.ArrayList(struct { time: f32, value: bool }),
+    keys: std.ArrayList(BoolKey),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) BoolTrack {
         return .{
-            .keys = std.ArrayList(struct { time: f32, value: bool }).init(allocator),
+            .keys = std.ArrayList(BoolKey).init(allocator),
             .allocator = allocator,
         };
     }
@@ -190,7 +200,7 @@ pub const BoolTrack = struct {
 };
 
 // =============================================================================
-// 6. COMPOUND TRACK (Vec2, Vec3, Color)
+// 7. COMPOUND TRACK (Vec2, Vec3, Color)
 // =============================================================================
 
 /// Составной трек — объединяет несколько float треков.
@@ -237,7 +247,7 @@ pub const CompoundTrack = struct {
 };
 
 // =============================================================================
-// 7. ANIM NODE
+// 8. ANIM NODE
 // =============================================================================
 
 /// Узел в анимационном графе (entity reference).
@@ -251,7 +261,7 @@ pub const AnimNode = struct {
 };
 
 // =============================================================================
-// 8. ANIM SEQUENCE
+// 9. ANIM SEQUENCE
 // =============================================================================
 
 /// AnimSequence — последовательность анимации.
@@ -319,7 +329,7 @@ pub const AnimSequence = struct {
 
     /// Установить время.
     pub fn setTime(self: *AnimSequence, t: f32) void {
-        self.current_time = std.math.clamp(t, 0, self.duration);
+        self.current_time = std.math.clamp(t, 0.0, self.duration);
     }
 
     /// Обновить анимацию.
@@ -364,7 +374,7 @@ pub const AnimSequence = struct {
 };
 
 // =============================================================================
-// 9. ANIMATION SYSTEM
+// 10. ANIMATION SYSTEM
 // =============================================================================
 
 /// UiAnimationSystem — менеджер всех анимаций.
@@ -410,7 +420,7 @@ pub const AnimationSystem = struct {
 };
 
 // =============================================================================
-// 10. ТЕСТЫ
+// 11. ТЕСТЫ
 // =============================================================================
 
 test "FloatTrack: linear interpolation" {

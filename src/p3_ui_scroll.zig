@@ -182,11 +182,11 @@ pub const Slider = struct {
     pub fn inputPositionUpdate(self: *Slider, point: Vec2, track_rect: Rect, orientation: Orientation) void {
         if (!self.is_dragging) return;
 
-        const t = switch (orientation) {
+        const t: f32 = @floatCast(switch (orientation) {
             .horizontal => (point.x - track_rect.left) / @max(track_rect.width(), 0.001),
             .vertical => (point.y - track_rect.top) / @max(track_rect.height(), 0.001),
-        };
-        self.setValueChanging(self.min_value + std.math.clamp(t, 0, 1) * (self.max_value - self.min_value));
+        });
+        self.setValueChanging(self.min_value + std.math.clamp(t, 0.0, 1.0) * (self.max_value - self.min_value));
     }
 
     /// Step up.
