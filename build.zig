@@ -183,46 +183,49 @@ pub fn build(b: *std.Build) void {
     // zig build p3-gpu   — собрать бинарник (real GPU)
     // zig build run-gpu  — запустить движок (real GPU)
     //
-    // Dependencies in build.zig.zon (for Zig 0.14+):
+    // Dependencies in build.zig.zon (Zig 0.14.0):
     //   zglfw (commit d9c06187e8b2)
     //   zgpu  (commit 96f3ce2229e4)
-    //   dawn_x86_64_linux_gnu
+    //   dawn_x86_64_linux_gnu (lazy)
+    //
+    // CRITICAL: @import("zgpu").addLibraryPathsTo() ДО linkLibrary(zdawn)
     // ========================================================
-    const use_gpu = b.option(bool, "use-gpu", "Build with real WebGPU (zgpu/Dawn)") orelse false;
-    if (use_gpu) {
-        if (b.lazyDependency("zglfw", .{
+    {
+        const zglfw_dep = b.dependency("zglfw", .{
             .target = target,
             .optimize = optimize,
-        })) |zglfw_dep| {
-            if (b.lazyDependency("zgpu", .{
-                .target = target,
-                .optimize = optimize,
-            })) |zgpu_dep| {
-                const exe_gpu = b.addExecutable(.{
-                    .name = "p3-engine-gpu",
-                    .root_source_file = b.path("src/p3_app.zig"),
-                    .target = target,
-                    .optimize = optimize,
-                });
-                addP3Imports(b, exe_gpu, lib_modules, rt_modules);
+        });
+        const zgpu_dep = b.dependency("zgpu", .{
+            .target = target,
+            .optimize = optimize,
+        });
 
-                exe_gpu.root_module.addImport("zgpu", zgpu_dep.module("root"));
-                exe_gpu.root_module.addImport("zglfw", zglfw_dep.module("root"));
+        const exe_gpu = b.addExecutable(.{
+            .name = "p3-engine-gpu",
+            .root_source_file = b.path("src/p3_app.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        addP3Imports(b, exe_gpu, lib_modules, rt_modules);
 
-                const zgpu_stub_build = @import("src/stubs/zgpu_stub.zig");
-                zgpu_stub_build.addLibraryPathsTo(exe_gpu);
+        // Real zgpu/zglfw imports
+        exe_gpu.root_module.addImport("zgpu", zgpu_dep.module("root"));
+        exe_gpu.root_module.addImport("zglfw", zglfw_dep.module("root"));
 
-                b.installArtifact(exe_gpu);
+        // CRITICAL: addLibraryPathsTo ДО linkLibrary(zdawn)
+        @import("zgpu").addLibraryPathsTo(exe_gpu);
+        exe_gpu.linkLibrary(zgpu_dep.artifact("zdawn"));
+        exe_gpu.linkLibrary(zglfw_dep.artifact("glfw"));
 
-                const p3_gpu_step = b.step("p3-gpu", "Build P³ Engine with real GPU (zgpu/Dawn + zglfw)");
-                p3_gpu_step.dependOn(&exe_gpu.step);
+        b.installArtifact(exe_gpu);
 
-                const run_gpu_cmd = b.addRunArtifact(exe_gpu);
-                if (b.args) |args| run_gpu_cmd.addArgs(args);
-                const run_gpu_step = b.step("run-gpu", "Run P³ Engine with real GPU");
-                run_gpu_step.dependOn(&run_gpu_cmd.step);
-            }
-        }
+        const p3_gpu_step = b.step("p3-gpu", "Build P³ Engine with real GPU (zgpu/Dawn + zglfw)");
+        p3_gpu_step.dependOn(&exe_gpu.step);
+
+        const run_gpu_cmd = b.addRunArtifact(exe_gpu);
+        if (b.args) |args| run_gpu_cmd.addArgs(args);
+        const run_gpu_step = b.step("run-gpu", "Run P³ Engine with real GPU");
+        run_gpu_step.dependOn(&run_gpu_cmd.step);
     }
 
     // ========================================================

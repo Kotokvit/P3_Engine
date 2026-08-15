@@ -53,7 +53,7 @@ pub fn serializeJson(
     const writer = list.writer();
 
     switch (type_info) {
-        .Struct => |s| {
+        .@"struct" => |s| {
             try writer.writeAll("{");
             var first = true;
             inline for (s.fields) |field| {
@@ -78,20 +78,20 @@ fn writeJsonValue(writer: anytype, value: anytype) !void {
     const type_info = @typeInfo(T);
 
     switch (type_info) {
-        .Int, .ComptimeInt => {
+        .int, .comptime_int => {
             try writer.print("{d}", .{value});
         },
-        .Float, .ComptimeFloat => {
+        .float, .comptime_float => {
             try writer.print("{d}", .{@as(f64, @floatCast(value))});
         },
-        .Bool => {
+        .bool => {
             try writer.writeAll(if (value) "true" else "false");
         },
-        .Enum => {
+        .@"enum" => {
             // Use @tagName for enum serialization
             try writer.print("\"{s}\"", .{@tagName(value)});
         },
-        .Struct => |s| {
+        .@"struct" => |s| {
             try writer.writeAll("{");
             var first = true;
             inline for (s.fields) |field| {
@@ -102,7 +102,7 @@ fn writeJsonValue(writer: anytype, value: anytype) !void {
             }
             try writer.writeAll("}");
         },
-        .Array => |a| {
+        .array => |a| {
             try writer.writeAll("[");
             for (value, 0..) |item, i| {
                 if (i > 0) try writer.writeAll(",");
@@ -111,7 +111,7 @@ fn writeJsonValue(writer: anytype, value: anytype) !void {
             _ = a;
             try writer.writeAll("]");
         },
-        .Optional => {
+        .optional => {
             if (value) |v| {
                 try writeJsonValue(writer, v);
             } else {
