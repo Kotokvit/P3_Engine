@@ -49,6 +49,66 @@ pub const ProjectedVertex = struct {
     entity_id: u8,
 };
 
+pub const AgentAction = union(enum) {
+    none,
+    thrust: f32,
+    yaw: f32,
+    pitch: f32,
+    reset,
+};
+
+pub const VisualObservation = struct {
+    frame_id: u64,
+    simulation_time: f64,
+    width: usize,
+    height: usize,
+    color: []const PixelColor,
+    depth: []const f32,
+    segmentation: []const u8,
+};
+
+pub const ObservationPublisher = struct {
+    next_frame_id: u64 = 0,
+
+    pub fn publish(self: *ObservationPublisher, frame_buffer: *const VisualFrameBuffer, simulation_time: f64) VisualObservation {
+        const frame_id = self.next_frame_id;
+        self.next_frame_id += 1;
+        return .{
+            .frame_id = frame_id,
+            .simulation_time = simulation_time,
+            .width = frame_buffer.width,
+            .height = frame_buffer.height,
+            .color = frame_buffer.color_buffer,
+            .depth = frame_buffer.depth_buffer,
+            .segmentation = frame_buffer.segmentation_buffer,
+        };
+    }
+};
+
+pub const ActionBus = struct {
+    const capacity = 64;
+    actions: [capacity]AgentAction = undefined,
+    read_index: usize = 0,
+    write_index: usize = 0,
+    count: usize = 0,
+
+    pub fn push(self: *ActionBus, action: AgentAction) bool {
+        if (self.count == capacity) return false;
+        self.actions[self.write_index] = action;
+        self.write_index = (self.write_index + 1) % capacity;
+        self.count += 1;
+        return true;
+    }
+
+    pub fn pop(self: *ActionBus) ?AgentAction {
+        if (self.count == 0) return null;
+        const action = self.actions[self.read_index];
+        self.read_index = (self.read_index + 1) % capacity;
+        self.count -= 1;
+        return action;
+    }
+};
+
 pub const VisualFrameBuffer = struct {
     width: usize,
     height: usize,
@@ -95,6 +155,18 @@ pub const VisualFrameBuffer = struct {
             self.color_buffer[idx] = color;
             self.segmentation_buffer[idx] = entity_id;
         }
+    }
+
+    pub fn observation(self: *const VisualFrameBuffer, frame_id: u64, simulation_time: f64) VisualObservation {
+        return .{
+            .frame_id = frame_id,
+            .simulation_time = simulation_time,
+            .width = self.width,
+            .height = self.height,
+            .color = self.color_buffer,
+            .depth = self.depth_buffer,
+            .segmentation = self.segmentation_buffer,
+        };
     }
 
     /// Exports RGB Color Frame to NetPBM PPM format in memory (Zero dependencies, pure Zig)
@@ -205,4 +277,26 @@ test "ProjectiveVision: FrameBuffer allocation, rasterization and PPM export" {
     const ppm = try fb.exportPpm(allocator);
     defer allocator.free(ppm);
     try std.testing.expect(ppm.len > 100);
+}
+
+test "ProjectiveVision: observations advance and actions round-trip" {
+    const allocator = std.testing.allocator;
+    var fb = try VisualFrameBuffer.init(allocator, 4, 4);
+    defer fb.deinit();
+
+    var publisher = ObservationPublisher{};
+    const first = publisher.publish(&fb, 0.0);
+    const second = publisher.publish(&fb, 0.016);
+    try std.testing.expectEqual(@as(u64, 0), first.frame_id);
+    try std.testing.expectEqual(@as(u64, 1), second.frame_id);
+    try std.testing.expectEqual(@as(usize, 16), second.color.len);
+    try std.testing.expectEqual(@as(usize, 16), second.depth.len);
+    try std.testing.expectEqual(@as(usize, 16), second.segmentation.len);
+
+    var actions = ActionBus{};
+    try std.testing.expect(actions.push(.{ .thrust = 1.0 }));
+    try std.testing.expect(actions.push(.reset));
+    try std.testing.expectEqualDeep(AgentAction{ .thrust = 1.0 }, actions.pop().?);
+    try std.testing.expectEqualDeep(AgentAction.reset, actions.pop().?);
+    try std.testing.expect(actions.pop() == null);
 }
