@@ -497,4 +497,84 @@ pub fn build(b: *std.Build) void {
         const run_tank_step = b.step("run-tank-arena", "Run P³ Orbital Hover-Tank Arena");
         run_tank_step.dependOn(&run_tank.step);
     }
+
+    // ========================================================
+    // TARGET 8: p3-arena-bench (HEADLESS Asteroid Field benchmark)
+    //   Pure software rasterizer, no GPU, no raylib.
+    //   Produces PPM + raw depth + segmentation + JSON sidecar.
+    // ========================================================
+    {
+        const bench_exe = b.addExecutable(.{
+            .name = "p3-arena-bench",
+            .root_source_file = b.path("src/p3_arena_bench.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            bench_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        bench_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        const install_bench = b.addInstallArtifact(bench_exe, .{});
+        b.getInstallStep().dependOn(&install_bench.step);
+
+        const bench_step = b.step("arena-bench", "Build P3 Headless Arena Benchmark (no GPU)");
+        bench_step.dependOn(&install_bench.step);
+
+        const run_bench = b.addRunArtifact(bench_exe);
+        const run_bench_step = b.step("run-arena-bench", "Run P3 Headless Arena Benchmark");
+        run_bench_step.dependOn(&run_bench.step);
+    }
+
+    // ========================================================
+    // TARGET 9: p3-closed-loop (LLM Vision Closed-Loop Demo)
+    //   Reads /home/z/renders/actions.json, applies actions
+    //   one-by-one, renders each frame to disk with PNG + depth
+    //   + segmentation + meta JSON. Demonstrates the engine's
+    //   real-time visual access for an LLM agent.
+    // ========================================================
+    {
+        const loop_exe = b.addExecutable(.{
+            .name = "p3-closed-loop",
+            .root_source_file = b.path("src/p3_closed_loop.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            loop_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        loop_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        const install_loop = b.addInstallArtifact(loop_exe, .{});
+        b.getInstallStep().dependOn(&install_loop.step);
+
+        const loop_step = b.step("closed-loop", "Build P3 LLM Vision Closed-Loop Demo (no GPU)");
+        loop_step.dependOn(&install_loop.step);
+
+        const run_loop = b.addRunArtifact(loop_exe);
+        const run_loop_step = b.step("run-closed-loop", "Run P3 LLM Vision Closed-Loop Demo");
+        run_loop_step.dependOn(&run_loop.step);
+    }
 }
