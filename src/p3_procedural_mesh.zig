@@ -287,6 +287,101 @@ pub fn generateSpaceshipMesh(allocator: std.mem.Allocator, cfg: ShipHullConfig) 
     return mesh;
 }
 
+pub const TankConfig = struct {
+    width: f32 = 2.4,
+    length: f32 = 3.6,
+    height: f32 = 1.0,
+    armor_color: [4]u8 = .{ 65, 80, 75, 255 }, // Military Olive Green / Titanium
+    turret_color: [4]u8 = .{ 95, 115, 105, 255 },
+    energy_glow: [4]u8 = .{ 0, 240, 255, 255 }, // Cyan Repulsor Glow
+};
+
+/// Parametric procedural generator for combat hover-tanks with anti-grav repulsors
+pub fn generateHoverTankMesh(allocator: std.mem.Allocator, cfg: TankConfig) !ProceduralMesh {
+    var mesh = ProceduralMesh.init(allocator);
+    errdefer mesh.deinit();
+
+    const w = cfg.width;
+    const l = cfg.length;
+    const h = cfg.height;
+    const col = cfg.armor_color;
+    const tcol = cfg.turret_color;
+    const glow = cfg.energy_glow;
+
+    // 1. Armored Chassis (Upper Deck)
+    const fwd_l = Vec3.init(-w * 0.4, h * 0.5, l * 0.5);
+    const fwd_r = Vec3.init(w * 0.4, h * 0.5, l * 0.5);
+    const mid_l = Vec3.init(-w * 0.5, h * 0.5, 0.0);
+    const mid_r = Vec3.init(w * 0.5, h * 0.5, 0.0);
+    const aft_l = Vec3.init(-w * 0.45, h * 0.4, -l * 0.5);
+    const aft_r = Vec3.init(w * 0.45, h * 0.4, -l * 0.5);
+
+    try mesh.addQuad(
+        .{ .pos = fwd_l, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 1 }, .color = col },
+        .{ .pos = fwd_r, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 1 }, .color = col },
+        .{ .pos = mid_r, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0.5 }, .color = col },
+        .{ .pos = mid_l, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0.5 }, .color = col },
+    );
+    try mesh.addQuad(
+        .{ .pos = mid_l, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0.5 }, .color = col },
+        .{ .pos = mid_r, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0.5 }, .color = col },
+        .{ .pos = aft_r, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0 }, .color = col },
+        .{ .pos = aft_l, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0 }, .color = col },
+    );
+
+    // 2. Beveled Combat Turret
+    const tw = w * 0.35;
+    const tl = l * 0.3;
+    const th = h * 1.1;
+    const tur_fl = Vec3.init(-tw * 0.8, th, tl * 0.4);
+    const tur_fr = Vec3.init(tw * 0.8, th, tl * 0.4);
+    const tur_ar = Vec3.init(tw, th, -tl * 0.6);
+    const tur_al = Vec3.init(-tw, th, -tl * 0.6);
+
+    try mesh.addQuad(
+        .{ .pos = tur_fl, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 1 }, .color = tcol },
+        .{ .pos = tur_fr, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 1 }, .color = tcol },
+        .{ .pos = tur_ar, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0 }, .color = tcol },
+        .{ .pos = tur_al, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0 }, .color = tcol },
+    );
+
+    // 3. Twin Railgun Barrels (Aft to Front)
+    const b_r = Vec3.init(tw * 0.35, th * 0.9, tl * 0.4);
+    const b_r_tip = Vec3.init(tw * 0.35, th * 0.9, tl * 1.6);
+    const b_l = Vec3.init(-tw * 0.35, th * 0.9, tl * 0.4);
+    const b_l_tip = Vec3.init(-tw * 0.35, th * 0.9, tl * 1.6);
+
+    try mesh.addTriangle(
+        .{ .pos = b_r, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0 }, .color = glow },
+        .{ .pos = Vec3.init(b_r.x + 0.08, b_r.y, b_r.z), .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0 }, .color = glow },
+        .{ .pos = b_r_tip, .normal = Vec3.init(0, 1, 0), .uv = .{ 0.5, 1 }, .color = glow },
+    );
+    try mesh.addTriangle(
+        .{ .pos = b_l, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0 }, .color = glow },
+        .{ .pos = Vec3.init(b_l.x - 0.08, b_l.y, b_l.z), .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0 }, .color = glow },
+        .{ .pos = b_l_tip, .normal = Vec3.init(0, 1, 0), .uv = .{ 0.5, 1 }, .color = glow },
+    );
+
+    // 4. 4 Anti-Gravity Repulsor Pods (Underside Glowing Pads)
+    const pad_r: f32 = 0.25;
+    const pod_positions = [_]Vec3{
+        Vec3.init(-w * 0.45, 0.1, l * 0.4),
+        Vec3.init(w * 0.45, 0.1, l * 0.4),
+        Vec3.init(-w * 0.45, 0.1, -l * 0.4),
+        Vec3.init(w * 0.45, 0.1, -l * 0.4),
+    };
+
+    for (pod_positions) |pp| {
+        try mesh.addTriangle(
+            .{ .pos = pp, .normal = Vec3.init(0, -1, 0), .uv = .{ 0.5, 0.5 }, .color = glow },
+            .{ .pos = Vec3.init(pp.x + pad_r, pp.y, pp.z), .normal = Vec3.init(0, -1, 0), .uv = .{ 1, 0.5 }, .color = glow },
+            .{ .pos = Vec3.init(pp.x, pp.y, pp.z + pad_r), .normal = Vec3.init(0, -1, 0), .uv = .{ 0.5, 1 }, .color = glow },
+        );
+    }
+
+    return mesh;
+}
+
 // =============================================================================
 // TESTS
 // =============================================================================

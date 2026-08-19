@@ -452,4 +452,49 @@ pub fn build(b: *std.Build) void {
         const run_game_step = b.step("run-game", "Run P³ Void Voyager Game");
         run_game_step.dependOn(&run_game.step);
     }
+
+    // ========================================================
+    // TARGET 7: p3-tank-arena (Orbital Hover-Tank Arena)
+    // ========================================================
+    {
+        const tank_exe = b.addExecutable(.{
+            .name = "p3-tank-arena",
+            .root_source_file = b.path("src/tank_arena_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            tank_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        tank_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        tank_exe.linkLibC();
+        tank_exe.linkSystemLibrary("raylib");
+        tank_exe.linkSystemLibrary("GL");
+        tank_exe.linkSystemLibrary("m");
+        tank_exe.linkSystemLibrary("pthread");
+        tank_exe.linkSystemLibrary("dl");
+        tank_exe.linkSystemLibrary("rt");
+        tank_exe.linkSystemLibrary("X11");
+        const install_tank = b.addInstallArtifact(tank_exe, .{});
+        b.getInstallStep().dependOn(&install_tank.step);
+
+        const tank_step = b.step("tank-arena", "Build P³ Orbital Hover-Tank Arena");
+        tank_step.dependOn(&install_tank.step);
+
+        const run_tank = b.addRunArtifact(tank_exe);
+        const run_tank_step = b.step("run-tank-arena", "Run P³ Orbital Hover-Tank Arena");
+        run_tank_step.dependOn(&run_tank.step);
+    }
 }
