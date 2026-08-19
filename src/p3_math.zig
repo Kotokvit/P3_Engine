@@ -649,6 +649,20 @@ pub const Mat4x4 = struct {
         return m;
     }
 
+    /// LookAt View Matrix (World-to-Camera)
+    pub fn lookAt(eye: Vec3, target: Vec3, up: Vec3) Mat4x4 {
+        const f = target.sub(eye).normalize();
+        const s = f.cross(up).normalize();
+        const u = s.cross(f);
+
+        return fromRows(
+            Vec4.init(s.x, s.y, s.z, -s.dot(eye)),
+            Vec4.init(u.x, u.y, u.z, -u.dot(eye)),
+            Vec4.init(-f.x, -f.y, -f.z, f.dot(eye)),
+            Vec4.init(0.0, 0.0, 0.0, 1.0),
+        );
+    }
+
     /// Perspective projection (сингулярная коллинеация P³ → P²)
     pub fn createProjectionFov(fov_y: f32, aspect: f32, near: f32, far: f32) Mat4x4 {
         const cot_half_fov = 1.0 / @tan(fov_y * 0.5);
@@ -1181,27 +1195,27 @@ pub const Frustum = struct {
         // Left:  m[3] + m[0]
         f.planes[@intFromEnum(PlaneId.left)] = Plane.fromVec4(Vec4.init(
             r[3].x + r[0].x, r[3].y + r[0].y, r[3].z + r[0].z, r[3].w + r[0].w,
-        ));
+        )).normalize();
         // Right: m[3] - m[0]
         f.planes[@intFromEnum(PlaneId.right)] = Plane.fromVec4(Vec4.init(
             r[3].x - r[0].x, r[3].y - r[0].y, r[3].z - r[0].z, r[3].w - r[0].w,
-        ));
+        )).normalize();
         // Bottom: m[3] + m[1]
         f.planes[@intFromEnum(PlaneId.bottom)] = Plane.fromVec4(Vec4.init(
             r[3].x + r[1].x, r[3].y + r[1].y, r[3].z + r[1].z, r[3].w + r[1].w,
-        ));
+        )).normalize();
         // Top:    m[3] - m[1]
         f.planes[@intFromEnum(PlaneId.top)] = Plane.fromVec4(Vec4.init(
             r[3].x - r[1].x, r[3].y - r[1].y, r[3].z - r[1].z, r[3].w - r[1].w,
-        ));
+        )).normalize();
         // Near:   m[3] + m[2]
         f.planes[@intFromEnum(PlaneId.near)] = Plane.fromVec4(Vec4.init(
             r[3].x + r[2].x, r[3].y + r[2].y, r[3].z + r[2].z, r[3].w + r[2].w,
-        ));
+        )).normalize();
         // Far:    m[3] - m[2]
         f.planes[@intFromEnum(PlaneId.far)] = Plane.fromVec4(Vec4.init(
             r[3].x - r[2].x, r[3].y - r[2].y, r[3].z - r[2].z, r[3].w - r[2].w,
-        ));
+        )).normalize();
         return f;
     }
 
@@ -1212,19 +1226,40 @@ pub const Frustum = struct {
         var result: IntersectResult = .interior;
         for (f.planes) |plane| {
             const p = Vec3.init(
-                if (plane.normal.x >= 0) aabb.min.x else aabb.max.x,
-                if (plane.normal.y >= 0) aabb.min.y else aabb.max.y,
-                if (plane.normal.z >= 0) aabb.min.z else aabb.max.z,
-            );
-            const n = Vec3.init(
                 if (plane.normal.x >= 0) aabb.max.x else aabb.min.x,
                 if (plane.normal.y >= 0) aabb.max.y else aabb.min.y,
                 if (plane.normal.z >= 0) aabb.max.z else aabb.min.z,
             );
-            if (plane.distanceToPoint(p) > 0) return .exterior;
-            if (plane.distanceToPoint(n) > 0) result = .overlaps;
+            const n = Vec3.init(
+                if (plane.normal.x >= 0) aabb.min.x else aabb.max.x,
+                if (plane.normal.y >= 0) aabb.min.y else aabb.max.y,
+                if (plane.normal.z >= 0) aabb.min.z else aabb.max.z,
+            );
+            if (plane.distanceToPoint(p) < 0) return .exterior;
+            if (plane.distanceToPoint(n) < 0) result = .overlaps;
         }
         return result;
+    }
+
+    /// Проверка точки на попадание во Frustum
+    pub fn containsPoint(self: Frustum, pt: Vec3) bool {
+        for (self.planes) |p| {
+            if (p.distanceToPoint(pt) < -1e-4) return false;
+        }
+        return true;
+    }
+
+    /// Проверка пересечения сферы со Frustum
+    pub fn intersectsSphere(self: Frustum, center: Vec3, radius: f32) bool {
+        for (self.planes) |p| {
+            if (p.distanceToPoint(center) < -radius) return false;
+        }
+        return true;
+    }
+
+    /// Проверка пересечения Aabb (булевый результат)
+    pub fn intersectsAabb(self: Frustum, box: Aabb) bool {
+        return self.intersectAabb(box) != .exterior;
     }
 };
 
@@ -1509,7 +1544,299 @@ pub fn HaltonSequence(comptime dim: u8) type {
 }
 
 // =============================================================================
-// 16. ТЕСТЫ
+// 16. Rotator (из Unreal Engine FRotator — Pitch, Yaw, Roll в градусах)
+// =============================================================================
+
+/// Углы Эйлера в градусах (конвенция Unreal Engine: Pitch = Y-наклон, Yaw = Z-поворот, Roll = X-крен)
+pub const Rotator = struct {
+    pitch: f32 = 0.0, // Наклон вверх/вниз вокруг оси Y [-90..90]
+    yaw: f32 = 0.0,   // Поворот влево/вправо вокруг оси Z [0..360)
+    roll: f32 = 0.0,  // Крен вокруг оси X [-180..180]
+
+    pub fn init(pitch_deg: f32, yaw_deg: f32, roll_deg: f32) Rotator {
+        return .{ .pitch = pitch_deg, .yaw = yaw_deg, .roll = roll_deg };
+    }
+
+    pub fn zero() Rotator {
+        return .{ .pitch = 0.0, .yaw = 0.0, .roll = 0.0 };
+    }
+
+    pub fn fromRadians(pitch_rad: f32, yaw_rad: f32, roll_rad: f32) Rotator {
+        return .{
+            .pitch = radToDeg(pitch_rad),
+            .yaw = radToDeg(yaw_rad),
+            .roll = radToDeg(roll_rad),
+        };
+    }
+
+    /// Нормализовать углы к диапазону [-180..180]
+    pub fn normalize(self: Rotator) Rotator {
+        var p = @rem(self.pitch, 360.0);
+        if (p > 180.0) p -= 360.0 else if (p < -180.0) p += 360.0;
+        var y = @rem(self.yaw, 360.0);
+        if (y > 180.0) y -= 360.0 else if (y < -180.0) y += 360.0;
+        var r = @rem(self.roll, 360.0);
+        if (r > 180.0) r -= 360.0 else if (r < -180.0) r += 360.0;
+        return .{ .pitch = p, .yaw = y, .roll = r };
+    }
+
+    /// Ограничить pitch в диапазоне [-89.9..89.9] во избежание Gimbal Lock
+    pub fn clamp(self: Rotator) Rotator {
+        const norm = self.normalize();
+        return .{
+            .pitch = std.math.clamp(norm.pitch, -89.9, 89.9),
+            .yaw = norm.yaw,
+            .roll = norm.roll,
+        };
+    }
+
+    /// Конвертировать Rotator в единичный Quaternion (последовательность ZYX: Yaw * Pitch * Roll)
+    pub fn toQuaternion(self: Rotator) Quaternion {
+        const p = degToRad(self.pitch) * 0.5;
+        const y = degToRad(self.yaw) * 0.5;
+        const r = degToRad(self.roll) * 0.5;
+
+        const sin_p = @sin(p);
+        const cos_p = @cos(p);
+        const sin_y = @sin(y);
+        const cos_y = @cos(y);
+        const sin_r = @sin(r);
+        const cos_r = @cos(r);
+
+        return Quaternion.init(
+            sin_r * cos_p * cos_y - cos_r * sin_p * sin_y, // x
+            cos_r * sin_p * cos_y + sin_r * cos_p * sin_y, // y
+            cos_r * cos_p * sin_y - sin_r * sin_p * cos_y, // z
+            cos_r * cos_p * cos_y + sin_r * sin_p * sin_y, // w
+        ).normalize();
+    }
+
+    /// Извлечь Rotator из Quaternion с защитой от Gimbal Lock
+    pub fn fromQuaternion(q: Quaternion) Rotator {
+        const norm = q.normalize();
+        const sin_pitch = 2.0 * (norm.w * norm.y - norm.z * norm.x);
+
+        var pitch_rad: f32 = 0.0;
+        var yaw_rad: f32 = 0.0;
+        var roll_rad: f32 = 0.0;
+
+        if (@abs(sin_pitch) >= 0.9999) {
+            // Gimbal Lock случай
+            pitch_rad = std.math.copysign(PI * 0.5, sin_pitch);
+            yaw_rad = -2.0 * math.atan2(norm.x, norm.w);
+            roll_rad = 0.0;
+        } else {
+            pitch_rad = math.asin(std.math.clamp(sin_pitch, -1.0, 1.0));
+            yaw_rad = math.atan2(2.0 * (norm.w * norm.z + norm.x * norm.y), 1.0 - 2.0 * (norm.y * norm.y + norm.z * norm.z));
+            roll_rad = math.atan2(2.0 * (norm.w * norm.x + norm.y * norm.z), 1.0 - 2.0 * (norm.x * norm.x + norm.y * norm.y));
+        }
+
+        return fromRadians(pitch_rad, yaw_rad, roll_rad);
+    }
+
+    /// Вектор прямого направления (Forward / Heading)
+    pub fn getForwardVector(self: Rotator) Vec3 {
+        const p = degToRad(self.pitch);
+        const y = degToRad(self.yaw);
+        const cp = @cos(p);
+        return Vec3.init(cp * @cos(y), cp * @sin(y), @sin(p)).normalize();
+    }
+
+    /// Вектор вправо (Right)
+    pub fn getRightVector(self: Rotator) Vec3 {
+        return self.toQuaternion().transformVec(Vec3.axisY()).normalize();
+    }
+
+    /// Вектор вверх (Up)
+    pub fn getUpVector(self: Rotator) Vec3 {
+        return self.toQuaternion().transformVec(Vec3.axisZ()).normalize();
+    }
+
+    /// Матрица вращения 4x4
+    pub fn toMatrix4x4(self: Rotator) Mat4x4 {
+        return self.toQuaternion().toMat4x4();
+    }
+
+    pub fn add(self: Rotator, other: Rotator) Rotator {
+        return Rotator.init(self.pitch + other.pitch, self.yaw + other.yaw, self.roll + other.roll);
+    }
+
+    pub fn sub(self: Rotator, other: Rotator) Rotator {
+        return Rotator.init(self.pitch - other.pitch, self.yaw - other.yaw, self.roll - other.roll);
+    }
+
+    pub fn scale(self: Rotator, s: f32) Rotator {
+        return Rotator.init(self.pitch * s, self.yaw * s, self.roll * s);
+    }
+};
+
+// =============================================================================
+// 17. Ray & Ray-Intersection (Трассировка лучей и пересечения)
+// =============================================================================
+
+/// Луч в трехмерном евклидовом пространстве
+pub const Ray = struct {
+    origin: Vec3,
+    direction: Vec3, // Единичный вектор
+
+    pub fn init(origin: Vec3, direction: Vec3) Ray {
+        return .{
+            .origin = origin,
+            .direction = direction.normalize(),
+        };
+    }
+
+    /// Точка вдоль луча: p(t) = origin + t * direction
+    pub fn pointAt(self: Ray, t: f32) Vec3 {
+        return self.origin.add(self.direction.scale(t));
+    }
+
+    /// Пересечение с плоскостью Plane
+    pub fn intersectPlane(self: Ray, plane: Plane) ?f32 {
+        const denom = plane.normal.dot(self.direction);
+        if (@abs(denom) < 1e-6) return null; // Луч параллелен плоскости
+        const t = -(plane.normal.dot(self.origin) + plane.dist) / denom;
+        return if (t >= 0.0) t else null;
+    }
+
+    /// Пересечение со сферой (центр, радиус) -> {t_entry, t_exit}
+    pub fn intersectSphere(self: Ray, center: Vec3, radius: f32) ?struct { t0: f32, t1: f32 } {
+        const oc = self.origin.sub(center);
+        const a = self.direction.dot(self.direction);
+        const b = 2.0 * oc.dot(self.direction);
+        const c = oc.dot(oc) - radius * radius;
+        const disc = b * b - 4.0 * a * c;
+
+        if (disc < 0.0) return null;
+        const sqrt_disc = @sqrt(disc);
+        const t0 = (-b - sqrt_disc) / (2.0 * a);
+        const t1 = (-b + sqrt_disc) / (2.0 * a);
+
+        if (t1 < 0.0) return null;
+        return .{ .t0 = @max(0.0, t0), .t1 = t1 };
+    }
+
+    /// Пересечение с ограничивающим параллелепипедом Aabb (Slab Method)
+    pub fn intersectAabb(self: Ray, box: Aabb) ?struct { t_min: f32, t_max: f32 } {
+        var t_min: f32 = -std.math.floatMax(f32);
+        var t_max: f32 = std.math.floatMax(f32);
+
+        const orig = [3]f32{ self.origin.x, self.origin.y, self.origin.z };
+        const dir = [3]f32{ self.direction.x, self.direction.y, self.direction.z };
+        const min_b = [3]f32{ box.min.x, box.min.y, box.min.z };
+        const max_b = [3]f32{ box.max.x, box.max.y, box.max.z };
+
+        for (0..3) |i| {
+            if (@abs(dir[i]) < 1e-6) {
+                if (orig[i] < min_b[i] or orig[i] > max_b[i]) return null;
+            } else {
+                const inv_d = 1.0 / dir[i];
+                var t1 = (min_b[i] - orig[i]) * inv_d;
+                var t2 = (max_b[i] - orig[i]) * inv_d;
+                if (t1 > t2) {
+                    const temp = t1;
+                    t1 = t2;
+                    t2 = temp;
+                }
+                t_min = @max(t_min, t1);
+                t_max = @min(t_max, t2);
+                if (t_min > t_max or t_max < 0.0) return null;
+            }
+        }
+        return .{ .t_min = @max(0.0, t_min), .t_max = t_max };
+    }
+
+    /// Пересечение с треугольником (Möller–Trumbore алгоритм) -> {t, u, v}
+    pub fn intersectTriangle(self: Ray, v0: Vec3, v1: Vec3, v2: Vec3) ?struct { t: f32, u: f32, v: f32 } {
+        const edge1 = v1.sub(v0);
+        const edge2 = v2.sub(v0);
+        const h = self.direction.cross(edge2);
+        const a = edge1.dot(h);
+
+        if (@abs(a) < 1e-6) return null; // Луч параллелен треугольнику
+        const f = 1.0 / a;
+        const s = self.origin.sub(v0);
+        const u = f * s.dot(h);
+        if (u < 0.0 or u > 1.0) return null;
+
+        const q = s.cross(edge1);
+        const v = f * self.direction.dot(q);
+        if (v < 0.0 or u + v > 1.0) return null;
+
+        const t = f * edge2.dot(q);
+        if (t < 1e-6) return null;
+        return .{ .t = t, .u = u, .v = v };
+    }
+};
+
+// =============================================================================
+// 18. Frustum & Reversed-Z Perspective (UE5 / Nanite Standard)
+// =============================================================================
+
+/// Стандартная и Reversed-Z проекционная матрица
+pub const Projection = struct {
+    /// Стандартная перспективная матрица (OpenGL/Vulkan depth [0..1])
+    pub fn perspective(fov_y_rad: f32, aspect: f32, near: f32, far: f32) Mat4x4 {
+        return Mat4x4.createProjectionFov(fov_y_rad, aspect, near, far);
+    }
+
+    /// Reversed-Z перспективная матрица с бесконечной дальней плоскостью (UE5 Standard)
+    /// z_near -> 1.0, z_inf -> 0.0 (максимальная точность float32 depth буфера на астрономических масштабах)
+    pub fn reversedZPerspective(fov_y_rad: f32, aspect: f32, near: f32) Mat4x4 {
+        const cot_half_fov = 1.0 / @tan(fov_y_rad * 0.5);
+        return Mat4x4.fromRows(
+            Vec4.init(cot_half_fov / aspect, 0.0, 0.0, 0.0),
+            Vec4.init(0.0, cot_half_fov, 0.0, 0.0),
+            Vec4.init(0.0, 0.0, 0.0, near),
+            Vec4.init(0.0, 0.0, -1.0, 0.0),
+        );
+    }
+};
+
+// =============================================================================
+// 19. InterpCurve (Кривые интерполяции, сплайны Эрмита и Безье)
+// =============================================================================
+
+/// Инструменты сплайновой и криволинейной интерполяции
+pub const InterpCurve = struct {
+    /// Кубический сплайн Эрмита: p0/p1 — точки, t0/t1 — касательные векторы скорости
+    pub fn cubicHermite(p0: Vec3, t0: Vec3, p1: Vec3, t1: Vec3, alpha: f32) Vec3 {
+        const a = std.math.clamp(alpha, 0.0, 1.0);
+        const a2 = a * a;
+        const a3 = a2 * a;
+
+        const h00 = 2.0 * a3 - 3.0 * a2 + 1.0;
+        const h10 = a3 - 2.0 * a2 + a;
+        const h01 = -2.0 * a3 + 3.0 * a2;
+        const h11 = a3 - a2;
+
+        return p0.scale(h00).add(t0.scale(h10)).add(p1.scale(h01)).add(t1.scale(h11));
+    }
+
+    /// Сплайн Катмулла-Рома по 4 опорным точкам
+    pub fn catmullRom(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, alpha: f32) Vec3 {
+        const t1 = p2.sub(p0).scale(0.5);
+        const t2 = p3.sub(p1).scale(0.5);
+        return cubicHermite(p1, t1, p2, t2, alpha);
+    }
+
+    /// Квадратичная кривая Безье
+    pub fn bezierQuad(p0: Vec3, p1: Vec3, p2: Vec3, t: f32) Vec3 {
+        const u = 1.0 - t;
+        return p0.scale(u * u).add(p1.scale(2.0 * u * t)).add(p2.scale(t * t));
+    }
+
+    /// Кубическая кривая Безье
+    pub fn bezierCubic(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, t: f32) Vec3 {
+        const u = 1.0 - t;
+        const tt = t * t;
+        const uu = u * u;
+        return p0.scale(uu * u).add(p1.scale(3.0 * uu * t)).add(p2.scale(3.0 * u * tt)).add(p3.scale(tt * t));
+    }
+};
+
+// =============================================================================
+// 20. ТЕСТЫ
 // =============================================================================
 
 test "Constants: radToDeg/degToRad" {
@@ -1667,4 +1994,72 @@ test "HaltonSequence: 2D" {
     const p = h.next();
     try std.testing.expect(p[0] >= 0 and p[0] < 1);
     try std.testing.expect(p[1] >= 0 and p[1] < 1);
+}
+
+test "Rotator: toQuaternion and fromQuaternion" {
+    const rot = Rotator.init(30.0, 45.0, 0.0);
+    const q = rot.toQuaternion();
+    const back = Rotator.fromQuaternion(q);
+    try std.testing.expectApproxEqAbs(rot.pitch, back.pitch, 0.1);
+    try std.testing.expectApproxEqAbs(rot.yaw, back.yaw, 0.1);
+    try std.testing.expectApproxEqAbs(rot.roll, back.roll, 0.1);
+
+    const fwd = rot.getForwardVector();
+    try std.testing.expect(fwd.x > 0.0 and fwd.y > 0.0 and fwd.z > 0.0);
+}
+
+test "Ray: sphere and AABB intersection" {
+    const ray = Ray.init(Vec3.init(0, 0, -10), Vec3.axisZ());
+    // Sphere at (0,0,0) radius 2
+    const sphere_hit = ray.intersectSphere(Vec3.zero(), 2.0);
+    try std.testing.expect(sphere_hit != null);
+    try std.testing.expectApproxEqAbs(sphere_hit.?.t0, 8.0, 1e-3);
+    try std.testing.expectApproxEqAbs(sphere_hit.?.t1, 12.0, 1e-3);
+
+    // AABB from (-1,-1,-1) to (1,1,1)
+    const box = Aabb.fromMinMax(Vec3.init(-1, -1, -1), Vec3.init(1, 1, 1));
+    const box_hit = ray.intersectAabb(box);
+    try std.testing.expect(box_hit != null);
+    try std.testing.expectApproxEqAbs(box_hit.?.t_min, 9.0, 1e-3);
+    try std.testing.expectApproxEqAbs(box_hit.?.t_max, 11.0, 1e-3);
+
+    // Triangle
+    const tri_hit = ray.intersectTriangle(Vec3.init(-2, -2, 0), Vec3.init(2, -2, 0), Vec3.init(0, 2, 0));
+    try std.testing.expect(tri_hit != null);
+    try std.testing.expectApproxEqAbs(tri_hit.?.t, 10.0, 1e-3);
+}
+
+test "Projection: Reversed-Z perspective matrix" {
+    const proj = Projection.reversedZPerspective(PI / 3.0, 16.0 / 9.0, 0.1);
+    try std.testing.expect(proj.rows[0].x > 0.0);
+    try std.testing.expect(proj.rows[1].y > 0.0);
+    try std.testing.expectApproxEqAbs(proj.rows[2].z, 0.0, 1e-6); // Reversed-Z infinite far
+    try std.testing.expectApproxEqAbs(proj.rows[2].w, 0.1, 1e-4);
+}
+
+test "Frustum: point and sphere containment" {
+    const view = Mat4x4.createLookAt(Vec3.init(0, 0, 10), Vec3.zero(), Vec3.axisY());
+    const proj = Projection.perspective(PI / 3.0, 1.0, 0.1, 100.0);
+    const vp = proj.mul(view);
+    const frustum = Frustum.fromMatrix(vp);
+
+    const aabb_inside = Aabb.fromCenterHalfExtents(Vec3.zero(), Vec3.init(1, 1, 1));
+    try std.testing.expect(frustum.intersectsAabb(aabb_inside));
+    const aabb_outside = Aabb.fromCenterHalfExtents(Vec3.init(0, 0, 200), Vec3.init(1, 1, 1));
+    try std.testing.expect(!frustum.intersectsAabb(aabb_outside));
+}
+
+test "InterpCurve: Cubic Hermite, Catmull-Rom, Bezier" {
+    const p0 = Vec3.zero();
+    const p1 = Vec3.init(10, 0, 0);
+    const t0 = Vec3.init(0, 5, 0);
+    const t1 = Vec3.init(0, -5, 0);
+
+    const mid = InterpCurve.cubicHermite(p0, t0, p1, t1, 0.5);
+    try std.testing.expectApproxEqAbs(mid.x, 5.0, 1e-3);
+    try std.testing.expect(mid.y > 0.0); // Curve bends upward due to tangents
+
+    const bez = InterpCurve.bezierQuad(p0, Vec3.init(5, 10, 0), p1, 0.5);
+    try std.testing.expectApproxEqAbs(bez.x, 5.0, 1e-3);
+    try std.testing.expectApproxEqAbs(bez.y, 5.0, 1e-3);
 }
