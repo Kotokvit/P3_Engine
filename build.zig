@@ -402,4 +402,51 @@ pub fn build(b: *std.Build) void {
         const run_editor_step = b.step("run-editor", "Run P³ Engine Full Interactive Studio Editor");
         run_editor_step.dependOn(&run_editor.step);
     }
+
+    // ========================================================
+    // TARGET 6: p3-game (Playable Projective Space Game)
+    // ========================================================
+    // zig build game      — собрать игру
+    // zig build run-game  — запустить игру
+    // ========================================================
+    {
+        const game_exe = b.addExecutable(.{
+            .name = "p3-game",
+            .root_source_file = b.path("src/game_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            game_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        game_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        game_exe.linkLibC();
+        game_exe.linkSystemLibrary("raylib");
+        game_exe.linkSystemLibrary("GL");
+        game_exe.linkSystemLibrary("m");
+        game_exe.linkSystemLibrary("pthread");
+        game_exe.linkSystemLibrary("dl");
+        game_exe.linkSystemLibrary("rt");
+        game_exe.linkSystemLibrary("X11");
+        b.installArtifact(game_exe);
+
+        const game_step = b.step("game", "Build P³ Void Voyager Game");
+        game_step.dependOn(&game_exe.step);
+
+        const run_game = b.addRunArtifact(game_exe);
+        const run_game_step = b.step("run-game", "Run P³ Void Voyager Game");
+        run_game_step.dependOn(&run_game.step);
+    }
 }
