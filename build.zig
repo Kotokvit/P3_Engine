@@ -83,7 +83,6 @@ pub fn build(b: *std.Build) void {
         .{ "polyroot",       "src/p3_polyroot.zig" },
         .{ "quasirandom",    "src/p3_quasirandom.zig" },
         .{ "archetype",      "src/p3_archetype.zig" },
-        .{ "root",           "src/root.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
@@ -91,6 +90,7 @@ pub fn build(b: *std.Build) void {
         .{ "gpu_rt", "src/p3_gpu_rt.zig" },
         .{ "input",  "src/p3_input.zig" },
         .{ "app",    "src/p3_app.zig" },
+        .{ "root",   "src/root.zig" },
     };
 
     // ========================================================
