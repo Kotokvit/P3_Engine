@@ -117,6 +117,9 @@ pub fn main() !void {
     }.draw;
 
     var frame_count: u32 = 0;
+    var action_bus = p3.ActionBus{};
+    var publisher = p3.ObservationPublisher{};
+    _ = &publisher;
 
     while (!rl.WindowShouldClose()) {
         const dt = rl.GetFrameTime();
@@ -127,7 +130,30 @@ pub fn main() !void {
         const screen_w = @as(f32, @floatFromInt(rl.GetScreenWidth()));
         const screen_h = @as(f32, @floatFromInt(rl.GetScreenHeight()));
 
-        // --- SHIP CONTROLS & INPUT ---
+        // --- 1. DRAIN AI ACTION BUS (LLM Agent Input) ---
+        var ai_thrust: f32 = 0.0;
+        var ai_yaw: f32 = 0.0;
+        var ai_pitch: f32 = 0.0;
+
+        while (action_bus.pop()) |act| {
+            switch (act) {
+                .thrust => |v| ai_thrust += v,
+                .yaw => |v| ai_yaw += v,
+                .pitch => |v| ai_pitch += v,
+                .reset => {
+                    ship_pos = HomVec4.init(0.0, 0.0, 12.0, 1.0);
+                    ship_speed = 0.0;
+                    ship_vel = Vec3.init(0, 0, 0);
+                },
+                .none => {},
+            }
+        }
+
+        // --- 2. SHIP CONTROLS (Blend AI ActionBus + Human Keyboard) ---
+        ship_yaw += ai_yaw * 2.0 * dt;
+        ship_pitch = std.math.clamp(ship_pitch + ai_pitch * 1.5 * dt, -0.8, 0.8);
+        if (ai_thrust > 0) ship_speed = @min(18.0, ship_speed + ai_thrust * 12.0 * dt);
+
         if (rl.IsKeyDown(rl.KEY_A) or rl.IsKeyDown(rl.KEY_LEFT)) ship_yaw -= 2.0 * dt;
         if (rl.IsKeyDown(rl.KEY_D) or rl.IsKeyDown(rl.KEY_RIGHT)) ship_yaw += 2.0 * dt;
         if (rl.IsKeyDown(rl.KEY_UP)) ship_pitch = std.math.clamp(ship_pitch + 1.5 * dt, -0.8, 0.8);

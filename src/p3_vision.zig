@@ -183,6 +183,52 @@ pub const VisualFrameBuffer = struct {
         }
         return list.toOwnedSlice();
     }
+
+    /// Exports Depth Buffer to raw little-endian f32 bytes (Phase 1 Serialization)
+    pub fn exportDepthBinary(self: *const VisualFrameBuffer, allocator: std.mem.Allocator) ![]u8 {
+        const byte_len = self.depth_buffer.len * @sizeOf(f32);
+        const bytes = try allocator.alloc(u8, byte_len);
+        @memcpy(bytes, std.mem.sliceAsBytes(self.depth_buffer));
+        return bytes;
+    }
+
+    /// Exports Semantic Segmentation Buffer to raw u8 entity IDs (Phase 2 Serialization)
+    pub fn exportSegmentationBinary(self: *const VisualFrameBuffer, allocator: std.mem.Allocator) ![]u8 {
+        const bytes = try allocator.alloc(u8, self.segmentation_buffer.len);
+        @memcpy(bytes, self.segmentation_buffer);
+        return bytes;
+    }
+
+    /// Exports full Wire Observation Bundle (JSON Header + RGB + Depth + Segmentation)
+    pub fn exportObservationBundle(self: *const VisualFrameBuffer, allocator: std.mem.Allocator, frame_id: u64, sim_time: f64) ![]u8 {
+        const ppm = try self.exportPpm(allocator);
+        defer allocator.free(ppm);
+        const depth_bytes = try self.exportDepthBinary(allocator);
+        defer allocator.free(depth_bytes);
+        const seg_bytes = try self.exportSegmentationBinary(allocator);
+        defer allocator.free(seg_bytes);
+
+        var bundle = std.ArrayList(u8).init(allocator);
+        var writer = bundle.writer();
+
+        const ppm_offset: usize = 0;
+        const depth_offset = ppm.len;
+        const seg_offset = depth_offset + depth_bytes.len;
+
+        try writer.print(
+            \\{{"frame_id":{d},"simulation_time":{d:.4},"width":{d},"height":{d},"buffers":{{"color":{{"offset":{d},"size":{d},"format":"ppm"}},"depth":{{"offset":{d},"size":{d},"format":"f32_le"}},"segmentation":{{"offset":{d},"size":{d},"format":"u8"}}}}}}
+            \\---PAYLOAD---
+            \\
+        , .{
+            frame_id, sim_time, self.width, self.height, ppm_offset, ppm.len, depth_offset, depth_bytes.len, seg_offset, seg_bytes.len,
+        });
+
+        try bundle.appendSlice(ppm);
+        try bundle.appendSlice(depth_bytes);
+        try bundle.appendSlice(seg_bytes);
+
+        return bundle.toOwnedSlice();
+    }
 };
 
 pub const ProjectiveRasterizer = struct {
@@ -299,4 +345,17 @@ test "ProjectiveVision: observations advance and actions round-trip" {
     try std.testing.expectEqualDeep(AgentAction{ .thrust = 1.0 }, actions.pop().?);
     try std.testing.expectEqualDeep(AgentAction.reset, actions.pop().?);
     try std.testing.expect(actions.pop() == null);
+}
+
+test "ProjectiveVision: complete wire observation bundle serialization" {
+    const allocator = std.testing.allocator;
+    var fb = try VisualFrameBuffer.init(allocator, 8, 8);
+    defer fb.deinit();
+
+    const bundle = try fb.exportObservationBundle(allocator, 42, 1.25);
+    defer allocator.free(bundle);
+
+    try std.testing.expect(bundle.len > 0);
+    try std.testing.expect(std.mem.indexOf(u8, bundle, "---PAYLOAD---") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bundle, "\"frame_id\":42") != null);
 }
