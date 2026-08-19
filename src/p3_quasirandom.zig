@@ -42,8 +42,8 @@ pub fn halton(index: i32, base: i32) f32 {
     var fraction: f32 = inv_base;
     var idx = index;
     while (idx > 0) {
-        result += @as(f32, @floatFromInt(idx % base)) * fraction;
-        idx = idx / base;
+        result += @as(f32, @floatFromInt(@rem(idx, base))) * fraction;
+        idx = @divTrunc(idx, base);
         fraction *= inv_base;
     }
     return result;
@@ -72,11 +72,11 @@ pub fn haltonScrambled(index: i32, base: i32, seed: i32) f32 {
     var idx = index;
     var s = seed;
     while (idx > 0) {
-        const digit = idx % base;
+        const digit = @rem(idx, base);
         // Permute digit using seed-based permutation
-        const permuted = (digit + s) % base;
+        const permuted = @rem(digit + s, base);
         result += @as(f32, @floatFromInt(permuted)) * fraction;
-        idx = idx / base;
+        idx = @divTrunc(idx, base);
         s = (s * 1103515245 + 12345) & 0x7FFFFFFF; // LCG for next permutation
         fraction *= inv_base;
     }

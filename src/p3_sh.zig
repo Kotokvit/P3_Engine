@@ -59,10 +59,9 @@ pub const BASIS_M: [9]i32 = .{ 0, -1, 0, 1, -2, -1, 0, 1, 2 };
 /// Constant basis integral: ∫ Y_0^0 dω = 2√π
 pub const CONSTANT_BASIS_INTEGRAL: f32 = 3.544907701811032;
 
-/// Number of SH coefficients for a given order: (2*Order - 1)²
+/// Number of SH coefficients for a given order: Order²
 pub fn numBasis(order: usize) usize {
-    const n = 2 * order - 1;
-    return n * n;
+    return order * order;
 }
 
 /// Get basis index from (L, M): index = L*(L+1) + M
@@ -85,7 +84,7 @@ pub fn legendre(l: i32, x: f32) f32 {
     var p_curr: f32 = x;
     var i: i32 = 1;
     while (i < l) : (i += 1) {
-        const p_next = ((2 * i + 1) * x * p_curr - @as(f32, @floatFromInt(i)) * p_prev) / @as(f32, @floatFromInt(i + 1));
+        const p_next = (@as(f32, @floatFromInt(2 * i + 1)) * x * p_curr - @as(f32, @floatFromInt(i)) * p_prev) / @as(f32, @floatFromInt(i + 1));
         p_prev = p_curr;
         p_curr = p_next;
     }
@@ -106,7 +105,7 @@ pub fn associatedLegendre(l: i32, m: i32, x: f32) f32 {
     if (abs_m > 0) {
         const somx2 = @sqrt((1.0 - x) * (1.0 + x));
         var fact: f32 = 1.0;
-        var i: i32 = 1;
+        var i: u32 = 1;
         while (i <= abs_m) : (i += 1) {
             p_mm *= -fact * somx2;
             fact += 2.0;
@@ -122,7 +121,7 @@ pub fn associatedLegendre(l: i32, m: i32, x: f32) f32 {
     // General recurrence: (l-m)P_l^m = x(2l-1)P_{l-1}^m - (l+m-1)P_{l-2}^m
     var p_prev2: f32 = p_mm;
     var p_prev1: f32 = p_mmp1;
-    var ll: i32 = abs_m + 2;
+    var ll: i32 = @as(i32, @intCast(abs_m)) + 2;
     while (ll <= l) : (ll += 1) {
         const f_ll: f32 = @floatFromInt(ll);
         const f_m: f32 = @floatFromInt(abs_m);
@@ -370,7 +369,7 @@ pub fn shProject(
 /// → Only even-order SH survive (L=0,2,4,...)
 /// → SH on RP² is "hemi-SH": half the coefficients of full SH
 pub fn projectiveSHVector(comptime max_even_order: usize) type {
-    const num_even = max_even_order * max_even_order; // coefficients for even L only
+    const num_even = 2 * max_even_order * max_even_order - max_even_order; // coefficients for even L only (L=0 -> 1, L=0,2 -> 6)
     return struct {
         const Self = @This();
         v: [num_even]f32,

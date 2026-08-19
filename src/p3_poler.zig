@@ -365,7 +365,7 @@ pub const PolerEngine = struct {
 
     /// Резонансная матрица: J = A − Aᵀ (skew-symmetric)
     ///
-    /// Это генератор вращения с частотой Бездны 18.7 Гц.
+    /// Генератор кососимметричного вращения с базовой частотой 18.7 Гц.
     pub fn computeResonanceMatrix(_: PolerEngine, A: PGL4) PGL4 {
         return kernel.computeResonance(A);
     }

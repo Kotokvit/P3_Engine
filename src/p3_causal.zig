@@ -411,6 +411,8 @@ pub const WorldEvolution = struct {
     worldlines: std.ArrayList(*Worldline),
     causal: CausalStructure,
     step_count: u64,
+    resonance_hz: f64 = kernel.RESONANCE_HZ,
+    oscillation_amplitude: f64 = 0.01,
     allocator: std.mem.Allocator,
 
     /// Инициализация с заданным шагом времени
@@ -421,6 +423,22 @@ pub const WorldEvolution = struct {
             .worldlines = std.ArrayList(*Worldline).init(allocator),
             .causal = CausalStructure.initDefault(),
             .step_count = 0,
+            .resonance_hz = kernel.RESONANCE_HZ,
+            .oscillation_amplitude = 0.01,
+            .allocator = allocator,
+        };
+    }
+
+    /// Инициализация с кастомными параметрами планетарной волновой среды
+    pub fn initWithResonance(allocator: std.mem.Allocator, dt: f64, resonance_hz: f64, amplitude: f64) WorldEvolution {
+        return .{
+            .dt = dt,
+            .t = 0.0,
+            .worldlines = std.ArrayList(*Worldline).init(allocator),
+            .causal = CausalStructure.initDefault(),
+            .step_count = 0,
+            .resonance_hz = resonance_hz,
+            .oscillation_amplitude = amplitude,
             .allocator = allocator,
         };
     }
@@ -438,7 +456,7 @@ pub const WorldEvolution = struct {
     /// Один шаг эволюции мира.
     ///
     /// Эндогенное течение: малое вращение в XW-плоскости
-    /// (Z/2Z-основа) с частотой Бездны 18.7 Гц.
+    /// (Z/2Z-основа) с настраиваемой резонансной частотой.
     pub fn step(self: *WorldEvolution) !WorldSnapshot {
         self.t += self.dt;
         self.step_count += 1;
@@ -450,7 +468,7 @@ pub const WorldEvolution = struct {
             const v = last.p3.normalize();
 
             // Малое вращение в плоскости XW (Z/2Z-основа)
-            const angle = 0.01 * math.sin(2.0 * math.pi * kernel.RESONANCE_HZ * self.t);
+            const angle = self.oscillation_amplitude * math.sin(2.0 * math.pi * self.resonance_hz * self.t);
             const c = math.cos(angle);
             const s = math.sin(angle);
 
@@ -480,8 +498,8 @@ pub const WorldEvolution = struct {
             }
         }
 
-        // Резонанс Бездны 18.7 Гц
-        const resonance = math.sin(2.0 * math.pi * kernel.RESONANCE_HZ * self.t);
+        // Текущий резонансный отклик среды
+        const resonance = math.sin(2.0 * math.pi * self.resonance_hz * self.t);
 
         return .{
             .t = self.t,

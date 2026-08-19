@@ -1,5 +1,5 @@
 // =============================================================================
-// P³ ENGINE — GUI DEMO (O3DE LyShine Components Live)
+// P^3 ENGINE — GUI DEMO (O3DE LyShine Components Live)
 // =============================================================================
 //
 // Демонстрация всех портированных O3DE LyShine UI компонентов:
@@ -28,7 +28,7 @@ const rl = @cImport({
     @cInclude("raylib.h");
 });
 
-// P³ UI modules (O3DE LyShine ports)
+// P^3 UI modules (O3DE LyShine ports)
 const ui_transform = @import("p3_ui_transform.zig");
 const ui_canvas = @import("p3_ui_canvas.zig");
 const ui_draw = @import("p3_ui_draw.zig");
@@ -52,7 +52,7 @@ const Color = ui_draw.Color;
 // =============================================================================
 // RAYLIB COLOR HELPERS
 // =============================================================================
-/// P³ Color (f32) → Raylib Color (u8)
+/// P^3 Color (f32) → Raylib Color (u8)
 fn toRlColor(c: Color) rl.Color {
     return .{
         .r = @intFromFloat(math.clamp(c.r * 255.0, 0.0, 255.0)),
@@ -62,7 +62,7 @@ fn toRlColor(c: Color) rl.Color {
     };
 }
 
-/// RGB u8 → P³ Color
+/// RGB u8 → P^3 Color
 fn fromRl(r: u8, g: u8, b: u8) Color {
     return Color.init(
         @as(f32, @floatFromInt(r)) / 255.0,

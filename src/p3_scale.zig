@@ -1,12 +1,10 @@
 // =============================================================================
-// P³ SCALE — ПЛАНЕТАРНЫЙ МАСШТАБ И КАЛИБРОВКА
+// P³ SCALE — ПЛАНЕТАРНЫЙ МАСШТАБ И КАЛИБРОВКА S³
 // =============================================================================
-//
-// Источник: Eteryya / 02_ФИЗИКА / P3_Voxel_Engine
 //
 // ФИЗИЧЕСКАЯ МОДЕЛЬ:
 //
-//   Планета Этерия — S³ с радиусом R = 5,838,400 m.
+//   Сферический мир — 3-сфера S³ с радиусом R.
 //   W-калибровка: W(s) = cos(s / 2R)
 //
 //   s — расстояние от «полюса» (северного полюса S³)
@@ -18,21 +16,17 @@
 //
 //   Это ФУНДАМЕНТАЛЬНО отличается от R³:
 //   - В R³: W не существует, нет перехода между картами
-//   - В P³: W → 0 — это РЕАЛЬНЫЙ физический эффект (смена карты)
+//   - В P³: W → 0 — это РЕАЛЬНЫЙ геометрический эффект (смена аффинной карты)
 //
-// КОНСТАНТЫ (из Eteryya):
-//   R = 5,838,400 m      — радиус планеты
+// ПАРАМЕТРЫ МАСШТАБА:
+//   R = 5,838,400 m      — базовый радиус планеты S³
 //   g = 5.844 m/s²       — поверхностная гравитация
 //   K_aniso = 9/7        — коэффициент анизотропии
-//   f_φ = 1.4 THz        — частота φ-поля (фредерит)
-//   f_χ = 18.7 Hz        — частота χ-поля
 //
 // ТРАЕКТОРИИ:
-//   1. s < πR:   W > 0 — «нормальная» траектория (та же карта)
+//   1. s < πR:   W > 0 — траектория в пределах текущей карты
 //   2. s = πR:   W = 0 — переход через экватор (смена карты)
-//   3. s > πR:   W < 0 — «антиподная» траектория (другая карта)
-//
-// Принцип: убивать и жрать и рождать новое.
+//   3. s > πR:   W < 0 — антиподная траектория (противоположная карта)
 // =============================================================================
 
 const std = @import("std");
@@ -45,17 +39,21 @@ pub const HomVec4 = p3_kernel.HomVec4;
 // 1. ПЛАНЕТАРНЫЕ КОНСТАНТЫ
 // =============================================================================
 
-/// Планета Этерия — канонические параметры
+/// Параметры планетарного масштаба S³
 pub const PlanetScale = struct {
     /// Радиус S³ (метры)
     radius: f64 = 5_838_400.0,
+    /// Масса тела (кг)
+    mass: f64 = 2.9861e24,
+    /// Средняя плотность (кг/м³)
+    density: f64 = 3580.0,
     /// Поверхностная гравитация (m/s²)
     gravity: f64 = 5.844,
     /// Коэффициент анизотропии (K_aniso = 9/7)
     k_aniso: f64 = 9.0 / 7.0,
-    /// Частота φ-поля (фредерит, THz → Hz)
+    /// Частота φ-поля (THz → Hz)
     f_phi: f64 = 1.4e12,
-    /// Частота χ-поля (Hz)
+    /// Частота χ-поля / резонанса (Hz)
     f_chi: f64 = 18.7,
     /// Золотое сечение (для угла транзита)
     golden_ratio: f64 = 1.618033988749895,
@@ -68,11 +66,67 @@ pub const PlanetScale = struct {
     /// Половина окружности (πR — расстояние до экватора)
     half_circumference: f64,
 
-    /// Создать с дефолтными параметрами Этерии
-    pub fn etheria() PlanetScale {
+    /// Создать с базовыми параметрами по умолчанию
+    pub fn defaultSphere() PlanetScale {
         const r: f64 = 5_838_400.0;
         return .{
             .radius = r,
+            .two_r = 2.0 * r,
+            .circumference = 2.0 * math.pi * r,
+            .half_circumference = math.pi * r,
+        };
+    }
+
+    /// Алиас для совместимости
+    pub const etheria = defaultSphere;
+
+    /// Создать сферу на основе массы (кг) и плотности (кг/м³): R = (3M / (4πρ))^(1/3)
+    pub fn fromMassAndDensity(mass_kg: f64, density_kg_m3: f64, resonance_hz: f64) PlanetScale {
+        const G: f64 = 6.67430e-11;
+        const volume_factor = (3.0 * mass_kg) / (4.0 * math.pi * density_kg_m3);
+        const r = math.pow(f64, volume_factor, 1.0 / 3.0);
+        const g = (G * mass_kg) / (r * r);
+        return .{
+            .radius = r,
+            .mass = mass_kg,
+            .density = density_kg_m3,
+            .gravity = g,
+            .f_chi = resonance_hz,
+            .two_r = 2.0 * r,
+            .circumference = 2.0 * math.pi * r,
+            .half_circumference = math.pi * r,
+        };
+    }
+
+    /// Создать сферу на основе радиуса (м) и гравитации (м/с²)
+    pub fn fromRadiusAndGravity(radius_m: f64, gravity_m_s2: f64, resonance_hz: f64) PlanetScale {
+        const G: f64 = 6.67430e-11;
+        const mass_kg = (gravity_m_s2 * radius_m * radius_m) / G;
+        const volume = (4.0 / 3.0) * math.pi * math.pow(f64, radius_m, 3.0);
+        const density_kg_m3 = mass_kg / volume;
+        return .{
+            .radius = radius_m,
+            .mass = mass_kg,
+            .density = density_kg_m3,
+            .gravity = gravity_m_s2,
+            .f_chi = resonance_hz,
+            .two_r = 2.0 * radius_m,
+            .circumference = 2.0 * math.pi * radius_m,
+            .half_circumference = math.pi * radius_m,
+        };
+    }
+
+    /// Создать с параметрами Земли (R = 6,378,100 m, g = 9.80665 m/s², f_chi = 7.83 Hz)
+    pub fn earth() PlanetScale {
+        const r: f64 = 6_378_100.0;
+        return .{
+            .radius = r,
+            .mass = 5.9722e24,
+            .density = 5515.0,
+            .gravity = 9.80665,
+            .k_aniso = 1.0,
+            .f_phi = 0.0,
+            .f_chi = 7.83, // Резонанс Шумана
             .two_r = 2.0 * r,
             .circumference = 2.0 * math.pi * r,
             .half_circumference = math.pi * r,
@@ -87,6 +141,30 @@ pub const PlanetScale = struct {
             .circumference = 2.0 * math.pi * r,
             .half_circumference = math.pi * r,
         };
+    }
+
+    /// Вторая космическая скорость (скорость освобождения) v_esc = √(2GM/R)
+    pub fn escapeVelocity(self: PlanetScale) f64 {
+        const G: f64 = 6.67430e-11;
+        if (self.mass > 0) {
+            return @sqrt((2.0 * G * self.mass) / self.radius);
+        }
+        return @sqrt(2.0 * self.gravity * self.radius);
+    }
+
+    /// Первая космическая (круговая орбитальная) скорость v_orb = √(GM/R)
+    pub fn orbitalVelocity(self: PlanetScale, altitude_m: f64) f64 {
+        const G: f64 = 6.67430e-11;
+        const r_total = self.radius + altitude_m;
+        if (self.mass > 0) {
+            return @sqrt((G * self.mass) / r_total);
+        }
+        return @sqrt((self.gravity * self.radius * self.radius) / r_total);
+    }
+
+    /// Периодическое фазовое колебание среды на резонансной частоте f_chi
+    pub fn phaseOscillation(self: PlanetScale, t: f64, amplitude: f64) f64 {
+        return amplitude * @sin(2.0 * math.pi * self.f_chi * t);
     }
 
     // =================================================================
@@ -167,7 +245,7 @@ pub const PlanetScale = struct {
     pub fn effectiveDistance(self: PlanetScale, s: f64) f64 {
         _ = self;
         // Планковская геодезическая: d_eff ≈ 2·ℓ_P
-        // В масштабе Этерии: минимальное разрешение
+        // Минимальное разрешение масштаба
         const min_dist = 2.0 * 1.616255e-35; // 2 × ℓ_P (метры)
         return @max(s, min_dist);
     }
@@ -311,4 +389,23 @@ test "Scale: PlanetScale circumference" {
     const ps = PlanetScale.etheria();
     const expected = 2.0 * math.pi * 5_838_400.0;
     try std.testing.expectApproxEqAbs(ps.circumference, expected, 1.0);
+}
+
+test "Scale: earth preset and escape velocity" {
+    const earth_scale = PlanetScale.earth();
+    try std.testing.expectApproxEqAbs(earth_scale.radius, 6_378_100.0, 1.0);
+    try std.testing.expectApproxEqAbs(earth_scale.gravity, 9.80665, 0.01);
+    const v_esc = earth_scale.escapeVelocity();
+    try std.testing.expectApproxEqAbs(v_esc, 11_180.0, 50.0); // ~11.18 km/s
+}
+
+test "Scale: fromMassAndDensity astrophysics" {
+    // M = 2.9861e24 kg, rho = 3580 kg/m3 -> R ~ 5839.5 km, g ~ 5.844 m/s2
+    const custom = PlanetScale.fromMassAndDensity(2.9861e24, 3580.0, 18.7);
+    try std.testing.expectApproxEqAbs(custom.radius, 5_839_530.0, 100.0);
+    try std.testing.expectApproxEqAbs(custom.gravity, 5.844, 0.01);
+    const v_esc = custom.escapeVelocity();
+    try std.testing.expectApproxEqAbs(v_esc, 8262.0, 20.0); // ~8.26 km/s
+    const osc = custom.phaseOscillation(0.0, 1.0);
+    try std.testing.expectApproxEqAbs(osc, 0.0, 1e-6);
 }

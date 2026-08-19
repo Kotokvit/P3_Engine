@@ -845,6 +845,14 @@ pub const Quaternion = struct {
         return Vec3.init(result.x, result.y, result.z);
     }
 
+    pub inline fn add(a: Quaternion, b: Quaternion) Quaternion {
+        return .{ .x = a.x + b.x, .y = a.y + b.y, .z = a.z + b.z, .w = a.w + b.w };
+    }
+
+    pub inline fn scale(q: Quaternion, s: f32) Quaternion {
+        return .{ .x = q.x * s, .y = q.y * s, .z = q.z * s, .w = q.w * s };
+    }
+
     pub fn dot(a: Quaternion, b: Quaternion) f32 {
         return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
     }
@@ -937,6 +945,9 @@ pub const Transform = struct {
     translation: Vec3,
     scale_val: f32,
 
+    pub inline fn init(rotation: Quaternion, translation: Vec3, scale_val: f32) Transform {
+        return .{ .rotation = rotation, .translation = translation, .scale_val = clamp(scale_val, MIN_TRANSFORM_SCALE, MAX_TRANSFORM_SCALE) };
+    }
     pub inline fn identity() Transform {
         return .{ .rotation = Quaternion.identity(), .translation = Vec3.zero(), .scale_val = 1.0 };
     }

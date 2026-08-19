@@ -63,7 +63,7 @@ pub fn arxBox(x: u32) u32 {
 
 /// 32-bit rotate left
 pub fn rotl32(x: u32, comptime k: u5) u32 {
-    return (x << k) | (x >> (32 - k));
+    return std.math.rotl(u32, x, k);
 }
 
 // =============================================================================
@@ -370,27 +370,33 @@ pub fn gf28Mul(a: u8, b: u8) u8 {
     return result;
 }
 
-/// Constant-time AES S-box via x^254 in GF(2⁸)
+/// Constant-time AES S-box via x^254 in GF(2⁸) + affine transformation
 /// Avoids lookup table (side-channel resistant)
 pub fn ctSbox(x: u8) u8 {
-    if (x == 0) return 0;
-    // x^254 = x^{-1} in GF(2⁸)
-    // Compute via square-and-multiply
-    const x2 = gf28Mul(x, x);
-    const x4 = gf28Mul(x2, x2);
-    const x8 = gf28Mul(x4, x4);
-    const x16 = gf28Mul(x8, x8);
-    const x32 = gf28Mul(x16, x16);
-    const x64 = gf28Mul(x32, x32);
-    const x128 = gf28Mul(x64, x64);
-    // x^254 = x^128 · x^64 · x^32 · x^16 · x^8 · x^4 · x^2
-    var result = gf28Mul(x128, x64);
-    result = gf28Mul(result, x32);
-    result = gf28Mul(result, x16);
-    result = gf28Mul(result, x8);
-    result = gf28Mul(result, x4);
-    result = gf28Mul(result, x2);
-    return result;
+    // 1. Inversion in GF(2⁸): x^254 = x^{-1} (0 maps to 0)
+    var inv: u8 = 0;
+    if (x != 0) {
+        const x2 = gf28Mul(x, x);
+        const x4 = gf28Mul(x2, x2);
+        const x8 = gf28Mul(x4, x4);
+        const x16 = gf28Mul(x8, x8);
+        const x32 = gf28Mul(x16, x16);
+        const x64 = gf28Mul(x32, x32);
+        const x128 = gf28Mul(x64, x64);
+        var res = gf28Mul(x128, x64);
+        res = gf28Mul(res, x32);
+        res = gf28Mul(res, x16);
+        res = gf28Mul(res, x8);
+        res = gf28Mul(res, x4);
+        res = gf28Mul(res, x2);
+        inv = res;
+    }
+    // 2. AES Affine transformation
+    const r1 = std.math.rotl(u8, inv, 1);
+    const r2 = std.math.rotl(u8, inv, 2);
+    const r3 = std.math.rotl(u8, inv, 3);
+    const r4 = std.math.rotl(u8, inv, 4);
+    return inv ^ r1 ^ r2 ^ r3 ^ r4 ^ 0x63;
 }
 
 // =============================================================================
@@ -451,8 +457,8 @@ test "GF(2⁸) multiply: identity" {
 test "Constant-time S-box: AES known value" {
     // AES S-box: S(0x53) = 0xED
     try std.testing.expectEqual(@as(u8, 0xED), ctSbox(0x53));
-    // S(0) = 0
-    try std.testing.expectEqual(@as(u8, 0), ctSbox(0));
+    // S(0) = 0x63
+    try std.testing.expectEqual(@as(u8, 0x63), ctSbox(0));
     // S(1) = 0x7C
     try std.testing.expectEqual(@as(u8, 0x7C), ctSbox(1));
 }

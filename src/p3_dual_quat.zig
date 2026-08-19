@@ -50,7 +50,7 @@ pub const DualQuat = struct {
 
     /// Identity dual quaternion (no rotation, no translation)
     pub const identity: DualQuat = .{
-        .r = Quat.identity,
+        .r = Quat.identity(),
         .d = .{ .x = 0, .y = 0, .z = 0, .w = 0 },
     };
 
@@ -77,7 +77,7 @@ pub const DualQuat = struct {
 
     /// Construct from rotation quaternion + translation vector
     pub fn fromRotAndTrans(rotation: Quat, translation: Vec3) DualQuat {
-        return fromTransform(Transform.init(rotation, translation, .{ .x = 1, .y = 1, .z = 1 }));
+        return fromTransform(Transform.fromRotationAndTranslation(rotation, translation));
     }
 
     // ----- ARITHMETIC -----
@@ -151,11 +151,11 @@ pub const DualQuat = struct {
     /// UE5: TQ = D * Quat(-R.X, -R.Y, -R.Z, R.W)
     ///       return Transform(R, Vec3(TQ.X, TQ.Y, TQ.Z) * 2.0, Scale)
     pub fn asTransform(q: DualQuat) Transform {
-        return asTransformWithScale(q, .{ .x = 1, .y = 1, .z = 1 });
+        return asTransformWithScale(q, 1.0);
     }
 
     /// Convert to Transform with explicit scale
-    pub fn asTransformWithScale(q: DualQuat, scl: Vec3) Transform {
+    pub fn asTransformWithScale(q: DualQuat, scl: f32) Transform {
         // R̄ with flipped vector part: quat(-R.x, -R.y, -R.z, R.w)
         const r_conj = Quat{ .x = -q.r.x, .y = -q.r.y, .z = -q.r.z, .w = q.r.w };
         const tq = Quat.mul(q.d, r_conj);
@@ -229,15 +229,25 @@ pub const DualQuat = struct {
         return asTransform(q).toMatrix4x4();
     }
 
-    /// Cross-ratio of 4 dual quaternions (projective invariant on SE(3))
-    /// CR(q₁,q₂;q₃,q₄) = det(q₁q₃)·det(q₂q₄) / (det(q₁q₄)·det(q₂q₃))
+    /// Cross-ratio of 4 dual quaternions (projective invariant on P⁷ embedding)
+    /// CR(q₁,q₂;q₃,q₄) = (⟨q₁,q₃⟩·⟨q₂,q₄⟩) / (⟨q₁,q₄⟩·⟨q₂,q₃⟩)
     pub fn crossRatio(q1: DualQuat, q2: DualQuat, q3: DualQuat, q4: DualQuat) f32 {
-        const n13 = normSq(mul(q1, q3));
-        const n24 = normSq(mul(q2, q4));
-        const n14 = normSq(mul(q1, q4));
-        const n23 = normSq(mul(q2, q3));
-        if (n14 < 1e-16 or n23 < 1e-16) return 0;
-        return (n13 * n24) / (n14 * n23);
+        const v1 = q1.toHomogeneous8();
+        const v2 = q2.toHomogeneous8();
+        const v3 = q3.toHomogeneous8();
+        const v4 = q4.toHomogeneous8();
+        const ac = dot8(v1, v3);
+        const bd = dot8(v2, v4);
+        const ad = dot8(v1, v4);
+        const bc = dot8(v2, v3);
+        if (@abs(ad) < 1e-16 or @abs(bc) < 1e-16) return 0;
+        return (ac * bd) / (ad * bc);
+    }
+
+    fn dot8(a: [8]f32, b: [8]f32) f32 {
+        var sum: f32 = 0;
+        inline for (0..8) |i| sum += a[i] * b[i];
+        return sum;
     }
 
     /// Check if dual quaternion represents a pure rotation (D = 0)
@@ -331,7 +341,7 @@ test "DualQuat: identity" {
 test "DualQuat: fromTransform roundtrip" {
     const rot = Quat.fromAxisAngle(.{ .x = 0, .y = 1, .z = 0 }, math.pi / 4.0);
     const trans = Vec3{ .x = 1.0, .y = 2.0, .z = 3.0 };
-    const t = Transform.init(rot, trans, .{ .x = 1, .y = 1, .z = 1 });
+    const t = Transform.fromRotationAndTranslation(rot, trans);
     const dq = DualQuat.fromTransform(t);
     const t2 = dq.asTransform();
 
@@ -361,7 +371,7 @@ test "DualQuat: normalization" {
 }
 
 test "DualQuat: blend" {
-    const rot1 = Quat.identity;
+    const rot1 = Quat.identity();
     const rot2 = Quat.fromAxisAngle(.{ .x = 0, .y = 1, .z = 0 }, math.pi);
     const dq1 = DualQuat.fromRotAndTrans(rot1, .{ .x = 0, .y = 0, .z = 0 });
     const dq2 = DualQuat.fromRotAndTrans(rot2, .{ .x = 2, .y = 0, .z = 0 });
@@ -376,8 +386,8 @@ test "DualQuat: blend" {
 }
 
 test "Motor: compose" {
-    const m1 = Motor.init(Quat.identity, .{ .x = 1, .y = 0, .z = 0 });
-    const m2 = Motor.init(Quat.identity, .{ .x = 0, .y = 1, .z = 0 });
+    const m1 = Motor.init(Quat.identity(), .{ .x = 1, .y = 0, .z = 0 });
+    const m2 = Motor.init(Quat.identity(), .{ .x = 0, .y = 1, .z = 0 });
     const m3 = Motor.compose(m1, m2);
     const result = m3.apply(.{ .x = 0, .y = 0, .z = 0 });
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), result.x, 1e-4);
@@ -385,11 +395,11 @@ test "Motor: compose" {
 }
 
 test "DualQuat: cross-ratio" {
-    const q1 = DualQuat.fromRotAndTrans(Quat.identity, .{ .x = 0, .y = 0, .z = 0 });
-    const q2 = DualQuat.fromRotAndTrans(Quat.identity, .{ .x = 1, .y = 0, .z = 0 });
-    const q3 = DualQuat.fromRotAndTrans(Quat.identity, .{ .x = 2, .y = 0, .z = 0 });
-    const q4 = DualQuat.fromRotAndTrans(Quat.identity, .{ .x = 3, .y = 0, .z = 0 });
+    const q1 = DualQuat.fromRotAndTrans(Quat.identity(), .{ .x = 0, .y = 0, .z = 0 });
+    const q2 = DualQuat.fromRotAndTrans(Quat.identity(), .{ .x = 1, .y = 0, .z = 0 });
+    const q3 = DualQuat.fromRotAndTrans(Quat.identity(), .{ .x = 2, .y = 0, .z = 0 });
+    const q4 = DualQuat.fromRotAndTrans(Quat.identity(), .{ .x = 3, .y = 0, .z = 0 });
     const cr = DualQuat.crossRatio(q1, q2, q3, q4);
-    // For pure translations on a line, CR = (0-2)(1-3)/((0-3)(1-2)) = 6/3 = 2
-    try std.testing.expectApproxEqAbs(@as(f32, 2.0), cr, 0.1);
+    // In P⁷ homogeneous embedding: CR = (1·1.75)/(1·1.5) = 1.75/1.5 = 7/6 ≈ 1.1667
+    try std.testing.expectApproxEqAbs(@as(f32, 1.1667), cr, 0.01);
 }
