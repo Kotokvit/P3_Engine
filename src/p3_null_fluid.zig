@@ -1,25 +1,19 @@
 // =============================================================================
-// P³ NULL-FLUID v1.0 — ZIG (GENERIC)
+// P³ DISPERSIVE & PHASE BOUNDARY OPTICS v1.0 — ZIG
 // =============================================================================
 //
-// Нуль-жидкость L_∅ и проективная оптика на P³.
+// Математическая модель дисперсионных сред, фазовых границ и комплексной
+// проективной оптики на P³ (модель Друде-Лоренца, эванесцентные волны).
 //
-// РЕФАКТОРИНГ: убрана хардкод-привязка к конкретному лору.
-// Все физические параметры — аргументы структур/функций.
-// Пользователь сам определяет: критический угол, константы,
-// химический состав, спектральные классы.
+// Все физические параметры конфигурируются пользователем.
 //
-// L_∅ = Ω ∩ χ | θ > θ_crit в P³ — фрустрированная критическая точка.
-//
-// Ключевые концепты:
-//   ρ_∅(θ) = sin²(θ − θ_crit) · H(θ − θ_crit) — проективная плотность
-//   n_∅ = i · n_Ω · √κ_φ — мнимый показатель преломления
-//   δ_opt = λ/(2π·|Im(n_∅)|) — глубина проникновения
-//   T_op/T_norm = (1 + κ·ρ_∅) / dΣ — спектр операционного времени
-//   d_n = d_0·(n+½) — квантование погружения
-//   n² = ε(ω) = 1 − ω_p²/[ω(ω + i·γ_coll)] — оптика Чёрного Зеркала
-//
-// Архитектор: Kotokvit (математик), Super Z (исполнение)
+// Ключевые физические соотношения:
+//   ρ(θ) = sin²(θ − θ_crit) · H(θ − θ_crit) — плотность фазовой границы
+//   n_eff = i · n₁ · √(ε₂/ε₁) — комплексный/мнимый показатель преломления
+//   δ_opt = λ / (2π · |Im(n)|) — глубина скин-слоя / затухания
+//   T_op/T_norm = (1 + κ·ρ) / dΣ — спектр операционного времени переноса
+//   d_n = d_0 · (n + ½) — квантование уровней проникновения
+//   n² = ε(ω) = 1 − ω_p² / [ω(ω + i·γ_coll)] — модель плазменного отражателя Друде
 // =============================================================================
 
 const std = @import("std");
@@ -29,34 +23,31 @@ const math = std.math;
 const deg_to_rad: f64 = math.pi / 180.0;
 
 // =============================================================================
-// 1. NULL-FLUID CONFIGURATION — ПОЛЬЗОВАТЕЛЬ САМ ЗАДАЁТ ПАРАМЕТРЫ
+// 1. PHASE BOUNDARY CONFIGURATION
 // =============================================================================
 
-/// Конфигурация нуль-жидкости — все параметры задаёт пользователь.
-///
-/// Нет хардкода: движок не знает про конкретные миры,
-/// он предоставляет математику, пользователь — данные.
+/// Конфигурация параметров фазовой границы и оптической среды.
 pub const NullFluidConfig = struct {
-    /// Критический угол (градусы) — порог L_∅
+    /// Критический угол (градусы) — порог фазового перехода
     theta_crit_deg: f64,
-    /// Ширина фрустрированной зоны (градусы)
+    /// Ширина переходной зоны (градусы)
     delta_deg: f64,
-    /// Показатель преломления Ω-среды
+    /// Показатель преломления первой среды
     n_omega: f64,
-    /// Диэлектрическая проницаемость Ω
+    /// Диэлектрическая проницаемость первой среды
     eps_omega: f64,
-    /// |Диэлектрическая проницаемость χ|
+    /// Диэлектрическая проницаемость второй среды
     eps_chi: f64,
-    /// Скорость света (м/с)
+    /// Скорость света в вакууме (м/с)
     c_light: f64,
-    /// Частота φ-поля (Гц)
+    /// Характеристическая частота волнового поля (Гц)
     f_phi: f64,
-    /// Фундаментальный шаг квантования погружения (м)
+    /// Базовый шаг дискретизации глубины (м)
     d_k: f64,
-    /// Константа связи для T_op спектра
+    /// Коэффициент связи масштабирования времени
     kappa: f64,
 
-    /// Конфигурация по умолчанию (универсальная, не привязана к лору)
+    /// Конфигурация по умолчанию (универсальная)
     pub fn initDefault() NullFluidConfig {
         return .{
             .theta_crit_deg = 85.0,
@@ -71,29 +62,31 @@ pub const NullFluidConfig = struct {
         };
     }
 
-    /// Анизотропный коэффициент: κ_φ = |ε_χ| / ε_Ω
+    /// Анизотропный коэффициент диэлектрической связи: κ = |ε₂| / ε₁
     pub inline fn kappaPhi(self: NullFluidConfig) f64 {
         return self.eps_chi / self.eps_omega;
     }
 
-    /// Фундаментальный шаг: d_0 = d_K / 1.5
+    /// Фундаментальный шаг квантования: d_0 = d_K / 1.5
     pub inline fn d0(self: NullFluidConfig) f64 {
         return self.d_k / 1.5;
     }
 
-    /// Скорость φ-информации: c_φ = c/√n_Ω (м/с)
+    /// Скорость распространения в среде: c_medium = c / √n₁ (м/с)
     pub inline fn cPhi(self: NullFluidConfig) f64 {
         return self.c_light / @sqrt(self.n_omega);
     }
 
-    /// Время релаксации: τ = 1/f_φ (с)
+    /// Характеристическое время релаксации: τ = 1/f (с)
     pub inline fn tauRelax(self: NullFluidConfig) f64 {
         return 1.0 / self.f_phi;
     }
 };
 
+pub const PhaseBoundaryConfig = NullFluidConfig;
+
 // =============================================================================
-// 2. ПРОЕКТИВНАЯ ПЛОТНОСТЬ ρ_∅
+// 2. ПРОЕКТИВНАЯ ПЛОТНОСТЬ ПЕРЕХОДА
 // =============================================================================
 
 /// Проективная плотность нуль-жидкости.
@@ -124,19 +117,22 @@ pub fn nullFluidDensitySmallAngle(theta_deg: f64, theta_crit_deg: f64) f64 {
 /// Результат проективной оптики.
 ///
 /// n_∅ = i · n_Ω · √κ_φ — мнимый показатель преломления.
-/// Физически: поле не распространяется как волна в L_∅,
-/// а экспоненциально затухает (evanescent).
+// =============================================================================
+// 3. КОМПЛЕКСНАЯ ПРОЕКТИВНАЯ ОПТИКА
+// =============================================================================
+
+/// Параметры комплексного показателя преломления и эванесцентного затухания.
 pub const ProjectiveOptics = struct {
-    /// κ_φ = |ε_χ| / ε_Ω — анизотропный коэффициент
+    /// Отношение диэлектрических проницаемостей: κ = ε₂ / ε₁
     kappa_phi: f64,
-    /// |Im(n_∅)| = n_Ω · √κ_φ — модуль мнимого показателя
+    /// Модуль мнимой части показателя преломления: |Im(n)| = n₁ · √κ
     n_null_abs: f64,
-    /// Длина волны φ-поля (м)
+    /// Длина волны в вакууме λ = c / f (м)
     lambda_phi: f64,
-    /// Глубина проникновения δ_opt = λ / (2π·|Im(n_∅)|) (м)
+    /// Глубина проникновения эванесцентного поля: δ = λ / (2π · |Im(n)|) (м)
     delta_opt: f64,
 
-    /// Вычислить проективную оптику из конфигурации
+    /// Расчет комплексной оптики из конфигурации
     pub fn compute(cfg: NullFluidConfig) ProjectiveOptics {
         const kp = cfg.kappaPhi();
         const sqrt_kp = @sqrt(kp);
@@ -153,15 +149,12 @@ pub const ProjectiveOptics = struct {
 };
 
 // =============================================================================
-// 4. СПЕКТР ОПЕРАЦИОННОГО ВРЕМЕНИ T_op
+// 4. СПЕКТР ВРЕМЕНИ ПЕРЕНОСА
 // =============================================================================
 
-/// Спектр операционного времени T_op в L_∅.
+/// Спектр масштабирования времени переноса через фазовую границу.
 ///
-/// T_op/T_norm = (1 + κ·ρ_∅) / (sin²(δ·r/r_0) / sin²(δ))
-///
-/// При r → 0: T_op → ∞ (центр L_∅ — горизонт операций)
-/// При r → r_0: T_op → конечное (граница L_∅)
+/// T_op / T_norm = (1 + κ · ρ) / (sin²(δ · r / r₀) / sin²(δ))
 pub fn operationalTimeSpectrum(r_ratio: f64, cfg: NullFluidConfig) f64 {
     const theta_r = 90.0 - cfg.delta_deg * r_ratio;
     const rho_r = nullFluidDensityExact(theta_r, cfg.theta_crit_deg);
@@ -177,38 +170,33 @@ pub fn operationalTimeSpectrum(r_ratio: f64, cfg: NullFluidConfig) f64 {
 }
 
 // =============================================================================
-// 5. КВАНТОВАНИЕ ПОГРУЖЕНИЯ
+// 5. КВАНТОВАНИЕ УРОВНЕЙ ПОГРУЖЕНИЯ
 // =============================================================================
 
-/// Квантованные глубины погружения в L_∅.
-///
-/// d_n = d_0 · (n + ½), где d_0 = d_K / 1.5
+/// Дискретные уровни глубины проникновения: d_n = d_0 · (n + ½)
 pub fn immersionDepth(n: u32, cfg: NullFluidConfig) f64 {
     return cfg.d0() * (@as(f64, @floatFromInt(n)) + 0.5);
 }
 
 // =============================================================================
-// 6. СПЕКТРАЛЬНЫЕ КЛАССЫ — ПОЛЬЗОВАТЕЛЬ САМ ОПРЕДЕЛЯЕТ
+// 6. СПЕКТРАЛЬНЫЕ КЛАССЫ РЕЗОНАНСНЫХ СОСТОЯНИЙ
 // =============================================================================
 
 /// Спектральный класс для неэрмитова гамильтониана.
-///
-/// Пользователь сам определяет, какие классы нужны.
-/// Стандартные три: α (метастабильный), β (резидентный), γ (мгновенный).
 pub const SpectralClass = enum(u2) {
-    /// E < 0, Γ ≈ 0, τ → ∞ — метастабильный
+    /// E < 0, Γ ≈ 0, τ → ∞ — связанное метастабильное состояние
     alpha = 0,
-    /// E < 0, Γ > 0, τ > threshold — резидентный
+    /// E < 0, Γ > 0, τ > threshold — квазистационарное состояние
     beta = 1,
-    /// E > 0, τ ≈ мгновенный — распад
+    /// E > 0, τ ≈ 0 — непрерывный спектр / распад
     gamma = 2,
 };
 
-/// Параметры спектрального класса — пользователь задаёт пороги.
+/// Конфигурация порогов спектральной классификации.
 pub const SpectralClassConfig = struct {
-    /// Порог для Γ (ширина резонанса)
+    /// Порог ширины резонанса (Γ)
     gamma_threshold: f64,
-    /// Порог для τ (время жизни, секунды)
+    /// Порог времени жизни (τ, секунды)
     tau_threshold: f64,
     /// Порог энергии: E < 0 → bound, E > 0 → continuum
     energy_threshold: f64,
@@ -231,24 +219,24 @@ pub const SpectralClassConfig = struct {
 };
 
 // =============================================================================
-// 7. ОПТИКА ЧЁРНОГО ЗЕРКАЛА (DRUDE-LORENZ)
+// 7. МОДЕЛЬ ПЛАЗМЕННОГО ОТРАЖАТЕЛЯ (DRUDE-LORENZ)
 // =============================================================================
 
-/// Оптика Чёрного Зеркала — плазменная металлизация.
+/// Модель плазменного/металлического отражателя Друде:
 ///
-/// n² = ε(ω) = 1 − ω_p² / [ω · (ω + i·γ_coll)]
+/// n² = ε(ω) = 1 − ω_p² / [ω · (ω + i · γ_coll)]
 ///
-/// При γ_coll → 0: ε → чисто мнимый → 100% отражение без дисперсии.
-pub const BlackMirrorOptics = struct {
+/// При γ_coll → 0: ε(ω) < 0 (для ω < ω_p) → полное отражение (плазмонное зеркало).
+pub const DrudeReflectorOptics = struct {
     /// Плазменная частота (рад/с)
     omega_p: f64,
-    /// Частота рассеяния (рад/с)
+    /// Частота столкновений/релаксации (рад/с)
     gamma_coll: f64,
-    /// Частота наблюдения (рад/с)
+    /// Частота падающего излучения (рад/с)
     omega: f64,
 
-    /// Вычислить диэлектрическую проницаемость ε(ω) = ε_real + i·ε_imag
-    pub fn dielectric(self: BlackMirrorOptics) struct { re: f64, im: f64 } {
+    /// Вычислить комплексную диэлектрическую проницаемость ε(ω) = ε_real + i·ε_imag
+    pub fn dielectric(self: DrudeReflectorOptics) struct { re: f64, im: f64 } {
         const w = self.omega;
         const wp2 = self.omega_p * self.omega_p;
         const gc = self.gamma_coll;
@@ -261,8 +249,8 @@ pub const BlackMirrorOptics = struct {
         return .{ .re = re, .im = im };
     }
 
-    /// Коэффициент отражения R ≈ ((|n| - 1) / (|n| + 1))²
-    pub fn reflectivity(self: BlackMirrorOptics) f64 {
+    /// Коэффициент отражения Френеля при нормальном падении: R = ((|n| - 1) / (|n| + 1))²
+    pub fn reflectivity(self: DrudeReflectorOptics) f64 {
         const eps = self.dielectric();
         const eps_abs = @sqrt(eps.re * eps.re + eps.im * eps.im);
         const n_abs = @sqrt(eps_abs);
@@ -271,54 +259,61 @@ pub const BlackMirrorOptics = struct {
     }
 };
 
+pub const BlackMirrorOptics = DrudeReflectorOptics; // Backwards compatibility alias
+
 // =============================================================================
-// 8. ХИМИЧЕСКАЯ СИСТЕМА — ПОЛЬЗОВАТЕЛЬ САМ ЗАДАЁТ
+// 8. ПАРАМЕТРИЧЕСКИЕ СВОЙСТВА МАТЕРИАЛОВ
 // =============================================================================
 
-/// Химический элемент/соединение — параметризуемый, без хардкода.
+/// Параметры проводимости и стабильности материала.
 pub const ChemicalSpecies = struct {
-    /// Название
+    /// Название материала/элемента
     name: []const u8,
-    /// Проводимость σ_e
+    /// Удельная проводимость σ_e
     sigma_e: f64,
-    /// Порог CNED
-    cned_threshold: f64,
+    /// Порог критической проводимости
+    stability_threshold: f64,
 
-    /// CNED-риск: σ_e < threshold → высокий риск
-    pub inline fn cnedRisk(self: ChemicalSpecies) bool {
-        return self.sigma_e < self.cned_threshold;
+    /// Проверка стабильности проводимости
+    pub inline fn isBelowThreshold(self: ChemicalSpecies) bool {
+        return self.sigma_e < self.stability_threshold;
     }
+
+    pub const cnedRisk = isBelowThreshold; // Alias for compatibility
 };
 
-/// Зона нуль-жидкости — пользователь определяет состав.
-pub const NullFluidZone = struct {
+/// Пространственная зона среды с заданными физическими свойствами.
+pub const MediumZone = struct {
     cfg: NullFluidConfig,
-    /// Максимальное расстояние от центра (м)
+    /// Максимальный радиус зоны (м)
     r_0: f64,
-    /// Проводимость зоны
+    /// Проводимость среды
     sigma_e: f64,
-    /// CNED-порог
-    cned_threshold: f64,
+    /// Порог стабильности
+    stability_threshold: f64,
 
-    /// Время информационного распространения на расстояние L
-    pub fn infoTime(self: NullFluidZone, L: f64) f64 {
+    /// Время распространения сигнала на расстояние L
+    pub fn signalTime(self: MediumZone, L: f64) f64 {
         return L / self.cfg.cPhi();
     }
 
-    /// CNED-риск
-    pub inline fn cnedRisk(self: NullFluidZone) bool {
-        return self.sigma_e < self.cned_threshold;
+    /// Проверка стабильности зоны
+    pub inline fn isBelowThreshold(self: MediumZone) bool {
+        return self.sigma_e < self.stability_threshold;
     }
+
+    pub const infoTime = signalTime;
+    pub const cnedRisk = isBelowThreshold;
 };
 
+pub const NullFluidZone = MediumZone; // Alias for compatibility
+
 // =============================================================================
-// 9. КРУГ КОСТЕЙ (χ-Leviathans) — ОБОБЩЁННЫЙ
+// 9. ГЕОДЕЗИЧЕСКИЕ ТОЧКИ НА СФЕРЕ S³
 // =============================================================================
 
-/// Точка на обобщённом «Круге» — N точек на θ = const.
-///
-/// Point_k = [sin(θ)·cos(φ_k), sin(θ)·sin(φ_k), 0, cos(θ)]
-/// где φ_k = 2π·k/N
+/// N точек, равномерно распределенных по долготе на заданной широте θ на сфере S³:
+/// Point_k = [sin(θ)·cos(φ_k), sin(θ)·sin(φ_k), 0, cos(θ)], где φ_k = 2π·k / N
 pub fn circlePoint(k: u32, n: u32, theta_deg: f64) [4]f64 {
     const theta_rad = theta_deg * deg_to_rad;
     const phi_rad = 2.0 * math.pi * @as(f64, @floatFromInt(k)) / @as(f64, @floatFromInt(n));
@@ -365,7 +360,7 @@ test "nullFluidDensityExact vs small-angle: agree near θ_crit" {
     try std.testing.expectApproxEqAbs(rho_exact, rho_small, rho_exact * 0.02);
 }
 
-test "nullFluidDensityExact: L_∅ is NOT nothing at θ = 90°" {
+test "PhaseBoundary: non-zero at theta = 90 deg" {
     const cfg = NullFluidConfig.initDefault();
     const rho = nullFluidDensityExact(90.0, cfg.theta_crit_deg);
     try std.testing.expect(rho > 0.0);
@@ -426,8 +421,8 @@ test "SpectralClassConfig: classify" {
     try std.testing.expect(sc.classify(-1.0, 0.1, 10.0) == .beta);
 }
 
-test "BlackMirrorOptics: high reflectivity at low gamma_coll" {
-    const bm = BlackMirrorOptics{
+test "DrudeReflectorOptics: high reflectivity at low damping" {
+    const bm = DrudeReflectorOptics{
         .omega_p = 1e15,
         .gamma_coll = 1e6,
         .omega = 1e15,
@@ -436,8 +431,8 @@ test "BlackMirrorOptics: high reflectivity at low gamma_coll" {
     try std.testing.expect(R > 0.9);
 }
 
-test "BlackMirrorOptics: lower reflectivity at high gamma_coll" {
-    const bm = BlackMirrorOptics{
+test "DrudeReflectorOptics: lower reflectivity at high damping" {
+    const bm = DrudeReflectorOptics{
         .omega_p = 1e15,
         .gamma_coll = 1e15,
         .omega = 1e15,
@@ -446,33 +441,33 @@ test "BlackMirrorOptics: lower reflectivity at high gamma_coll" {
     try std.testing.expect(R < 1.0);
 }
 
-test "ChemicalSpecies: CNED risk" {
+test "ChemicalSpecies: stability threshold" {
     const species = ChemicalSpecies{
         .name = "element_A",
         .sigma_e = 1.5,
-        .cned_threshold = 5.0,
+        .stability_threshold = 5.0,
     };
-    try std.testing.expect(species.cnedRisk());
+    try std.testing.expect(species.isBelowThreshold());
 
     const species2 = ChemicalSpecies{
         .name = "element_B",
         .sigma_e = 7.2,
-        .cned_threshold = 5.0,
+        .stability_threshold = 5.0,
     };
-    try std.testing.expect(!species2.cnedRisk());
+    try std.testing.expect(!species2.isBelowThreshold());
 }
 
-test "NullFluidZone: info time" {
+test "NullFluidZone: signal propagation time" {
     const zone = NullFluidZone{
         .cfg = NullFluidConfig.initDefault(),
         .r_0 = 0.5,
         .sigma_e = 4.0,
-        .cned_threshold = 5.0,
+        .stability_threshold = 5.0,
     };
-    const tau = zone.infoTime(100.0);
+    const tau = zone.signalTime(100.0);
     try std.testing.expect(tau > 1e-9);
     try std.testing.expect(tau < 1e-5);
-    try std.testing.expect(zone.cnedRisk());
+    try std.testing.expect(zone.isBelowThreshold());
 }
 
 test "circlePoint: all on S³" {

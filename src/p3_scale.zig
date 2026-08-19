@@ -215,11 +215,11 @@ pub const PlanetScale = struct {
     }
 
     // =================================================================
-    // УГОЛ ТРАНЗИТА
+    // УГОЛ ТРАНЗИТА И МИКРО-СДВИГА
     // =================================================================
 
-    /// Золотой угол транзита (радианы)
-    /// λ = π × 10⁻¹⁰ rad (из Eteryya canon)
+    /// Базовый квантовый угол транзита/микросдвига (радианы)
+    /// λ = π × 10⁻¹⁰ rad
     pub fn transitAngle(self: PlanetScale) f64 {
         _ = self;
         return math.pi * 1e-10;
@@ -252,32 +252,31 @@ pub const PlanetScale = struct {
 };
 
 // =============================================================================
-// 2. НУЛЬ-ЖИДКОСТЬ L_∅
+// 2. ФАЗОВЫЙ ПЕРЕХОД И ПЛОТНОСТЬ ГРАНИЦЫ
 // =============================================================================
 //
-// L_∅ = Ω ∩ χ при θ > 85°
-// ρ_∅(θ) = sin²(θ − 85°) · H(θ − 85°)
+// Квадратичная активация плотности границы при превышении порогового угла:
+// ρ(θ, θ_thresh) = sin²(θ − θ_thresh) · H(θ − θ_thresh)
 // H — функция Хевисайда
 
-/// Проективная плотность нуль-жидкости
-/// ρ_∅(θ) = sin²(θ − 85°) · H(θ − 85°)
-pub fn nullFluidDensity(theta_deg: f64) f64 {
-    const threshold: f64 = 85.0;
-    if (theta_deg <= threshold) return 0.0;
-    const diff = theta_deg - threshold;
+/// Плотность фазового перехода с настраиваемым пороговым углом
+pub fn criticalBoundaryDensityWithThreshold(theta_deg: f64, threshold_deg: f64) f64 {
+    if (theta_deg <= threshold_deg) return 0.0;
+    const diff = theta_deg - threshold_deg;
     const diff_rad = diff * math.pi / 180.0;
     return diff_rad * diff_rad; // sin²(x) ≈ x² для малых x
 }
 
-/// Угол между плоскостями Ω и χ
-/// Ω: W = 1 (Order), χ: Z = 0 (Chaos)
-pub fn orderChaosAngle(point: HomVec4) f64 {
-    // Угол между нормалями Ω и χ в R⁴
-    // n_Ω = (0,0,0,1), n_χ = (0,0,1,0)
-    // Угол = 90° всегда, но ПРОЕКТИВНО зависит от точки
+/// Плотность фазового перехода со стандартным порогом 85°
+pub fn criticalBoundaryDensity(theta_deg: f64) f64 {
+    return criticalBoundaryDensityWithThreshold(theta_deg, 85.0);
+}
+
+pub const nullFluidDensity = criticalBoundaryDensity; // Backwards compatibility alias
+
+/// Угол между координатными гиперплоскостями W (W=1) и Z (Z=0) в P³
+pub fn projectiveSubspaceAngle(point: HomVec4) f64 {
     const p = point.normalize();
-    // Компонента W → closeness to Ω
-    // Компонента Z → closeness to χ
     const w_abs = @abs(p.w);
     const z_abs = @abs(p.z);
     if (w_abs < 1e-15 and z_abs < 1e-15) return 45.0;
@@ -286,16 +285,17 @@ pub fn orderChaosAngle(point: HomVec4) f64 {
     return angle_rad * 180.0 / math.pi;
 }
 
+pub const orderChaosAngle = projectiveSubspaceAngle; // Backwards compatibility alias
+
 // =============================================================================
 // 3. ОПЕРАЦИОННОЕ ВРЕМЯ T = c · dI/dΣ
 // =============================================================================
 //
-// Т — «время жизни» явления = константа × (скорость изменения информации) / (скорость изменения структуры)
-// Это аксиоматическая теорема из Eteryya.
+// Т — время переноса/эволюции = константа × (скорость изменения информации) / (скорость изменения структуры)
 
-/// Операционное время
+/// Операционное время переноса/эволюции
 /// T = c · dI / dΣ
-/// c — константа связи, dI — скорость изменения информации, dΣ — скорость изменения структуры
+/// c — константа связи, dI — изменение информации, dΣ — изменение структуры
 pub fn operationalTime(c: f64, dI: f64, d_sigma: f64) f64 {
     if (@abs(d_sigma) < 1e-15) return 0.0;
     return c * dI / d_sigma;
@@ -305,67 +305,62 @@ pub fn operationalTime(c: f64, dI: f64, d_sigma: f64) f64 {
 // 4. ТЕСТЫ
 // =============================================================================
 
-test "Scale: PlanetScale.etheria radius" {
-    const ps = PlanetScale.etheria();
+test "Scale: PlanetScale.defaultSphere radius" {
+    const ps = PlanetScale.defaultSphere();
     try std.testing.expectApproxEqAbs(ps.radius, 5_838_400.0, 1e-3);
 }
 
 test "Scale: W at pole = 1" {
-    const ps = PlanetScale.etheria();
+    const ps = PlanetScale.defaultSphere();
     try std.testing.expectApproxEqAbs(ps.wFromDistance(0), 1.0, 1e-10);
 }
 
 test "Scale: W at equator ≈ 0" {
-    const ps = PlanetScale.etheria();
+    const ps = PlanetScale.defaultSphere();
     try std.testing.expectApproxEqAbs(ps.wFromDistance(ps.half_circumference), 0.0, 1e-6);
 }
 
 test "Scale: W at antipode = -1" {
-    const ps = PlanetScale.etheria();
-    // circumference * 0.5 = πR → W = cos(πR / 2R) = cos(π/2) = 0, not -1
-    // For W = -1: s = 2πR/2 = πR... no. cos(πR/2R) = cos(π/2) = 0
-    // W = -1 requires s = πR → but that's the equator. 
-    // Actually: W(s) = cos(s/2R), W=-1 → s/2R = π → s = 2πR = circumference
-    // But cos(2πR / 2R) = cos(π) = -1. Use s = circumference:
+    const ps = PlanetScale.defaultSphere();
     try std.testing.expectApproxEqAbs(ps.wFromDistance(ps.circumference), -1.0, 1e-6);
 }
 
 test "Scale: trajectoryClass normal" {
-    const ps = PlanetScale.etheria();
+    const ps = PlanetScale.defaultSphere();
     try std.testing.expect(ps.trajectoryClass(0) == .normal);
 }
 
 test "Scale: trajectoryClass antipodal" {
-    const ps = PlanetScale.etheria();
+    const ps = PlanetScale.defaultSphere();
     try std.testing.expect(ps.trajectoryClass(ps.half_circumference * 1.1) == .antipodal);
 }
 
 test "Scale: distanceFromW roundtrip" {
-    const ps = PlanetScale.etheria();
+    const ps = PlanetScale.defaultSphere();
     const s = 1_000_000.0; // 1000 km
     const w = ps.wFromDistance(s);
     const s2 = ps.distanceFromW(w);
     try std.testing.expectApproxEqAbs(s, s2, 1.0);
 }
 
-test "Scale: nullFluidDensity below threshold = 0" {
-    try std.testing.expectApproxEqAbs(nullFluidDensity(80.0), 0.0, 1e-10);
+test "Scale: criticalBoundaryDensity below threshold = 0" {
+    try std.testing.expectApproxEqAbs(criticalBoundaryDensity(80.0), 0.0, 1e-10);
 }
 
-test "Scale: nullFluidDensity above threshold > 0" {
-    try std.testing.expect(nullFluidDensity(87.0) > 0);
+test "Scale: criticalBoundaryDensity above threshold > 0" {
+    try std.testing.expect(criticalBoundaryDensity(87.0) > 0);
 }
 
-test "Scale: nullFluidDensity at 90°" {
+test "Scale: criticalBoundaryDensity at 90°" {
     // sin²(5°) in radians ≈ (5π/180)² ≈ 0.00762
-    const d = nullFluidDensity(90.0);
+    const d = criticalBoundaryDensity(90.0);
     try std.testing.expect(d > 0);
     try std.testing.expect(d < 0.01);
 }
 
-test "Scale: orderChaosAngle at W-axis ≈ 0°" {
+test "Scale: projectiveSubspaceAngle at W-axis ≈ 0°" {
     const p = HomVec4.init(0, 0, 0, 1); // pure W
-    const angle = orderChaosAngle(p);
+    const angle = projectiveSubspaceAngle(p);
     try std.testing.expectApproxEqAbs(angle, 0.0, 1.0);
 }
 

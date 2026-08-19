@@ -54,7 +54,7 @@ pub fn build(b: *std.Build) void {
         .{ "renderer",    "src/p3_renderer.zig" },
         // Phase 9: Full O3DE math port (Vec2/3/4, Mat3x3/4x4, Quat, Transform, Aabb, Plane, Frustum, Color, Uuid, Random)
         .{ "math",        "src/p3_math.zig" },
-        // Phase 8A: Math from Eteryya (causal, poler, null-fluid, PGA)
+        // Phase 8A: Projective & Field Dynamics (causal spacetime, poler operators, dispersive boundary optics, PGA)
         .{ "causal",      "src/p3_causal.zig" },
         .{ "poler",       "src/p3_poler.zig" },
         .{ "null_fluid",  "src/p3_null_fluid.zig" },
