@@ -156,6 +156,7 @@ pub const UiCanvas = struct {
     next_id: ElementId,
     hovered_id: ElementId,
     pressed_id: ElementId,
+    input_handler: ?InputHandler,
     allocator: std.mem.Allocator,
 
     /// Инициализация canvas
@@ -166,8 +167,14 @@ pub const UiCanvas = struct {
             .next_id = 1,
             .hovered_id = 0,
             .pressed_id = 0,
+            .input_handler = null,
             .allocator = allocator,
         };
+    }
+
+    /// Встановити callback для подій, які canvas маршрутизує до елемента.
+    pub fn setInputHandler(self: *UiCanvas, handler: ?InputHandler) void {
+        self.input_handler = handler;
     }
 
     /// Освобождение
@@ -206,6 +213,16 @@ pub const UiCanvas = struct {
         return null;
     }
 
+    fn findTopmostHit(self: *UiCanvas, point: Vec2) ?*UiElement {
+        var i: usize = self.elements.items.len;
+        while (i > 0) {
+            i -= 1;
+            const elem = &self.elements.items[i];
+            if (elem.hitTest(point)) return elem;
+        }
+        return null;
+    }
+
     /// Обработать событие ввода — маршрутизировать к элементам.
     ///
     /// В O3DE: input routing через EBus dispatch.
@@ -218,14 +235,11 @@ pub const UiCanvas = struct {
                 // Hit test: найти верхний interactable элемент
                 var new_hovered: ElementId = 0;
                 // Back-to-front: последний элемент с наибольшим draw_order
-                var i: usize = self.elements.items.len;
-                while (i > 0) {
-                    i -= 1;
-                    const elem = &self.elements.items[i];
-                    if (elem.hitTest(event.position)) {
-                        new_hovered = elem.id;
-                        elem.state = .hover;
-                        break;
+                if (self.findTopmostHit(event.position)) |elem| {
+                    new_hovered = elem.id;
+                    elem.state = .hover;
+                    if (self.input_handler) |handler| {
+                        _ = handler(elem, event);
                     }
                 }
                 // Unhover previous
@@ -238,12 +252,14 @@ pub const UiCanvas = struct {
                 return new_hovered != 0;
             },
             .mouse_down => {
-                if (self.hovered_id != 0) {
-                    if (self.findElement(self.hovered_id)) |elem| {
-                        elem.state = .pressed;
-                        self.pressed_id = elem.id;
-                        return true;
+                if (self.findTopmostHit(event.position)) |elem| {
+                    elem.state = .pressed;
+                    self.hovered_id = elem.id;
+                    self.pressed_id = elem.id;
+                    if (self.input_handler) |handler| {
+                        return handler(elem, event);
                     }
+                    return true;
                 }
                 return false;
             },
@@ -256,8 +272,9 @@ pub const UiCanvas = struct {
                         } else {
                             elem.state = .normal;
                         }
+                        const handled = if (self.input_handler) |handler| handler(elem, event) else true;
                         self.pressed_id = 0;
-                        return true;
+                        return handled;
                     }
                 }
                 self.pressed_id = 0;
@@ -294,6 +311,11 @@ pub const UiCanvas = struct {
 // =============================================================================
 // 7. ТЕСТЫ
 // =============================================================================
+
+fn countInputEvent(element: *UiElement, _: InputEvent) bool {
+    element.user_data += 1;
+    return true;
+}
 
 test "UiElement: init" {
     const elem = UiElement.init(1, "button");
@@ -389,6 +411,46 @@ test "UiCanvas: input routing click" {
     const released = canvas.handleInput(.{ .event_type = .mouse_up, .position = Vec2.init(150, 120), .button = 0, .key = 0, .delta = 0 });
     try std.testing.expect(released);
     try std.testing.expect(canvas.pressed_id == 0);
+}
+
+test "UiCanvas: mouse down hit tests current position" {
+    const allocator = std.testing.allocator;
+    var canvas = UiCanvas.init(allocator, Rect.fromSize(0, 0, 800, 600));
+    defer canvas.deinit();
+
+    _ = try canvas.createElement("button");
+    var elem = canvas.findElement(1).?;
+    elem.computed_rect = Rect.fromSize(100, 100, 200, 50);
+    elem.interactable = true;
+
+    const pressed = canvas.handleInput(.{
+        .event_type = .mouse_down,
+        .position = Vec2.init(150, 120),
+        .button = 0,
+        .key = 0,
+        .delta = 0,
+    });
+    try std.testing.expect(pressed);
+    try std.testing.expectEqual(@as(ElementId, 1), canvas.pressed_id);
+}
+
+test "UiCanvas: dispatches input callback" {
+    const allocator = std.testing.allocator;
+    var canvas = UiCanvas.init(allocator, Rect.fromSize(0, 0, 800, 600));
+    defer canvas.deinit();
+
+    _ = try canvas.createElement("button");
+    var elem = canvas.findElement(1).?;
+    elem.computed_rect = Rect.fromSize(100, 100, 200, 50);
+    elem.interactable = true;
+    canvas.setInputHandler(countInputEvent);
+
+    const position = Vec2.init(150, 120);
+    _ = canvas.handleInput(.{ .event_type = .mouse_move, .position = position, .button = 0, .key = 0, .delta = 0 });
+    _ = canvas.handleInput(.{ .event_type = .mouse_down, .position = position, .button = 0, .key = 0, .delta = 0 });
+    _ = canvas.handleInput(.{ .event_type = .mouse_up, .position = position, .button = 0, .key = 0, .delta = 0 });
+
+    try std.testing.expectEqual(@as(u64, 3), elem.user_data);
 }
 
 test "UiCanvas: update layout" {
