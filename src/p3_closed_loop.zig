@@ -785,25 +785,47 @@ pub fn main() !void {
         fb.clear(PixelColor.init(12, 16, 24, 255));
         try renderScene(&state, &fb);
 
-        // Save frame as frame_NNN.ppm + depth + seg + meta
+        // Save observation_NNN.json — the structured CV analysis.
+        // This is the primary output for the LLM agent loop: ~2 KB JSON
+        // describing what's visible (entities, centroids, depth, anomalies).
+        // No PNG needed — LLM gets structured perception, not pixels.
         const note: []const u8 = if (action.note) |n| n else "";
         const pad3 = std.fmt.allocPrint(allocator, "{d:0>3}", .{i}) catch "000";
         defer allocator.free(pad3);
 
-        const ppm_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}.ppm", .{ script.output_dir, pad3 }) catch continue;
-        defer allocator.free(ppm_path);
-        const depth_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}_depth.f32", .{ script.output_dir, pad3 }) catch continue;
-        defer allocator.free(depth_path);
-        const seg_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}_seg.u8", .{ script.output_dir, pad3 }) catch continue;
-        defer allocator.free(seg_path);
-        const meta_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}_meta.json", .{ script.output_dir, pad3 }) catch continue;
-        defer allocator.free(meta_path);
+        const obs_path = std.fmt.allocPrint(allocator, "{s}/observation_{s}.json", .{ script.output_dir, pad3 }) catch continue;
+        defer allocator.free(obs_path);
 
-        try writePpm(ppm_path, &fb);
-        try writeDepthAndSeg(depth_path, seg_path, &fb);
-        try writeMeta(meta_path, &fb, &state, note);
+        var obs = vision.analyzeFrameBuffer(&fb, allocator, state.frame_id, state.sim_time) catch continue;
+        defer obs.deinit();
+        const obs_json = vision.serializeObservationJson(&obs, allocator) catch continue;
+        defer allocator.free(obs_json);
+        {
+            var of = std.fs.cwd().createFile(obs_path, .{}) catch continue;
+            defer of.close();
+            try of.writeAll(obs_json);
+        }
 
-        // Count entities for summary
+        // PNG / depth / seg files are debug-only — only write when
+        // P3_DEBUG=1 is set. This is the difference between "LLM agent loop"
+        // (no PNG farming) and "human debug inspection" (PNG for me to look at).
+        const debug_png = std.process.getEnvVarOwned(allocator, "P3_DEBUG") catch null;
+        if (debug_png) |dp| {
+            defer allocator.free(dp);
+            const ppm_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}.ppm", .{ script.output_dir, pad3 }) catch continue;
+            defer allocator.free(ppm_path);
+            const depth_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}_depth.f32", .{ script.output_dir, pad3 }) catch continue;
+            defer allocator.free(depth_path);
+            const seg_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}_seg.u8", .{ script.output_dir, pad3 }) catch continue;
+            defer allocator.free(seg_path);
+            const meta_path = std.fmt.allocPrint(allocator, "{s}/frame_{s}_meta.json", .{ script.output_dir, pad3 }) catch continue;
+            defer allocator.free(meta_path);
+
+            try writePpm(ppm_path, &fb);
+            try writeDepthAndSeg(depth_path, seg_path, &fb);
+            try writeMeta(meta_path, &fb, &state, note);
+        }
+        // Count entities for summary (from segmentation buffer directly)
         var entity_counts: [8]usize = .{0} ** 8;
         for (fb.segmentation_buffer) |s| {
             if (s < 8) entity_counts[s] += 1;
@@ -846,7 +868,8 @@ pub fn main() !void {
     try stdout.print("\n=========================================================\n", .{});
     try stdout.print("Closed-loop demo complete: {d} frames rendered\n", .{rendered});
     try stdout.print("Output: {s}\n", .{script.output_dir});
-    try stdout.print("Each frame has: .ppm (RGB) + _depth.f32 + _seg.u8 + _meta.json\n", .{});
+    try stdout.print("Primary: observation_NNN.json — structured CV analysis for LLM\n", .{});
+    try stdout.print("Set P3_DEBUG=1 to also write PNG/depth/seg for human debug\n", .{});
     try stdout.print("loop_summary.json has per-frame state + entity counts\n", .{});
     try stdout.print("=========================================================\n", .{});
 }
