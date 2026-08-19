@@ -168,7 +168,7 @@ pub const P3Node = struct {
         return .{
             .seed = seed,
             .config = PGL4.identity(),
-            .planet_R_km = kernel.R_ETERIA_KM,
+            .planet_R_km = kernel.R_EARTH_KM,
             .path_steps = 0,
             .step_count = 0,
             .eta = 0.01,

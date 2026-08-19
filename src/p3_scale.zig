@@ -36,26 +36,26 @@ const p3_kernel = @import("p3_kernel.zig");
 pub const HomVec4 = p3_kernel.HomVec4;
 
 // =============================================================================
-// 1. ПЛАНЕТАРНЫЕ КОНСТАНТЫ
+// 1. ПЛАНЕТАРНЫЕ КОНСТАНТЫ И ПАРАМЕТРЫ S³
 // =============================================================================
 
 /// Параметры планетарного масштаба S³
 pub const PlanetScale = struct {
-    /// Радиус S³ (метры)
-    radius: f64 = 5_838_400.0,
+    /// Радиус S³ (метры) (по умолчанию — средний радиус Земли)
+    radius: f64 = 6_371_000.0,
     /// Масса тела (кг)
-    mass: f64 = 2.9861e24,
+    mass: f64 = 5.9722e24,
     /// Средняя плотность (кг/м³)
-    density: f64 = 3580.0,
+    density: f64 = 5515.0,
     /// Поверхностная гравитация (m/s²)
-    gravity: f64 = 5.844,
-    /// Коэффициент анизотропии (K_aniso = 9/7)
-    k_aniso: f64 = 9.0 / 7.0,
-    /// Частота φ-поля (THz → Hz)
-    f_phi: f64 = 1.4e12,
-    /// Частота χ-поля / резонанса (Hz)
-    f_chi: f64 = 18.7,
-    /// Золотое сечение (для угла транзита)
+    gravity: f64 = 9.80665,
+    /// Коэффициент анизотропии (1.0 = изотропная среда)
+    k_aniso: f64 = 1.0,
+    /// Частота высокочастотного волнового поля (Гц)
+    f_phi: f64 = 0.0,
+    /// Частота геофизического резонанса среды (Гц)
+    f_chi: f64 = 7.83,
+    /// Золотое сечение
     golden_ratio: f64 = 1.618033988749895,
 
     // Вычисленные
@@ -66,9 +66,8 @@ pub const PlanetScale = struct {
     /// Половина окружности (πR — расстояние до экватора)
     half_circumference: f64,
 
-    /// Создать с базовыми параметрами по умолчанию
-    pub fn defaultSphere() PlanetScale {
-        const r: f64 = 5_838_400.0;
+    /// Создать с параметрами сферы произвольного радиуса R
+    pub fn initWithRadius(r: f64) PlanetScale {
         return .{
             .radius = r,
             .two_r = 2.0 * r,
@@ -77,8 +76,10 @@ pub const PlanetScale = struct {
         };
     }
 
-    /// Алиас для совместимости
-    pub const etheria = defaultSphere;
+    /// Стандартная сфера по умолчанию
+    pub fn defaultSphere() PlanetScale {
+        return initWithRadius(6_371_000.0);
+    }
 
     /// Создать сферу на основе массы (кг) и плотности (кг/м³): R = (3M / (4πρ))^(1/3)
     pub fn fromMassAndDensity(mass_kg: f64, density_kg_m3: f64, resonance_hz: f64) PlanetScale {
@@ -127,16 +128,6 @@ pub const PlanetScale = struct {
             .k_aniso = 1.0,
             .f_phi = 0.0,
             .f_chi = 7.83, // Резонанс Шумана
-            .two_r = 2.0 * r,
-            .circumference = 2.0 * math.pi * r,
-            .half_circumference = math.pi * r,
-        };
-    }
-
-    /// Создать с произвольным радиусом
-    pub fn initWithRadius(r: f64) PlanetScale {
-        return .{
-            .radius = r,
             .two_r = 2.0 * r,
             .circumference = 2.0 * math.pi * r,
             .half_circumference = math.pi * r,
@@ -252,6 +243,52 @@ pub const PlanetScale = struct {
 };
 
 // =============================================================================
+// АСТРОНОМИЧЕСКИЙ И ГЕОФИЗИЧЕСКИЙ ИНСТРУМЕНТАРИЙ
+// =============================================================================
+
+/// Инструменты для вычисления астрофизических и орбитальных параметров
+pub const AstronomyTools = struct {
+    pub const G: f64 = 6.67430e-11; // Гравитационная постоянная (м³/(кг·с²))
+    pub const M_SUN: f64 = 1.98847e30; // Масса Солнца (кг)
+    pub const L_SUN: f64 = 3.828e26; // Светимость Солнца (Вт)
+    pub const AU: f64 = 1.495978707e11; // Астрономическая единица (м)
+    pub const SIGMA_SB: f64 = 5.670374419e-8; // Постоянная Стефана-Больцмана (Вт/(м²·K⁴))
+
+    /// 3-й закон Кеплера: орбитальный период T = 2π·√(a³ / (G·M_central)) (секунды)
+    pub fn keplerPeriod(semi_major_axis_m: f64, central_mass_kg: f64) f64 {
+        return 2.0 * math.pi * @sqrt(math.pow(f64, semi_major_axis_m, 3.0) / (G * central_mass_kg));
+    }
+
+    /// Орбитальный период в земных годах для орбиты вокруг Солнца: T_years = √(a_AU³)
+    pub fn orbitPeriodYears(a_au: f64) f64 {
+        return @sqrt(math.pow(f64, a_au, 3.0));
+    }
+
+    /// Синодический период двух тел: 1/P_syn = |1/P₁ − 1/P₂| (годы или секунды)
+    pub fn synodicPeriod(p1: f64, p2: f64) f64 {
+        const diff = @abs((1.0 / p1) - (1.0 / p2));
+        if (diff < 1e-15) return std.math.floatMax(f64);
+        return 1.0 / diff;
+    }
+
+    /// Солнечный поток на расстоянии d: S = L / (4π·d²) (Вт/м²)
+    pub fn solarFlux(luminosity_w: f64, distance_m: f64) f64 {
+        return luminosity_w / (4.0 * math.pi * distance_m * distance_m);
+    }
+
+    /// Равновесная температура черного тела: T_eq = (S·(1−A) / (4σ))^(1/4) (Кельвин)
+    pub fn equilibriumTemperature(flux_w_m2: f64, albedo: f64) f64 {
+        const absorbed = flux_w_m2 * (1.0 - albedo);
+        return math.pow(f64, absorbed / (4.0 * SIGMA_SB), 0.25);
+    }
+
+    /// Радиус сферы Хилла (гравитационное влияние планеты): r_H = a · (m_planet / (3·M_star))^(1/3)
+    pub fn hillSphereRadius(semi_major_axis_m: f64, planet_mass_kg: f64, star_mass_kg: f64) f64 {
+        return semi_major_axis_m * math.pow(f64, planet_mass_kg / (3.0 * star_mass_kg), 1.0 / 3.0);
+    }
+};
+
+// =============================================================================
 // 2. ФАЗОВЫЙ ПЕРЕХОД И ПЛОТНОСТЬ ГРАНИЦЫ
 // =============================================================================
 //
@@ -307,7 +344,7 @@ pub fn operationalTime(c: f64, dI: f64, d_sigma: f64) f64 {
 
 test "Scale: PlanetScale.defaultSphere radius" {
     const ps = PlanetScale.defaultSphere();
-    try std.testing.expectApproxEqAbs(ps.radius, 5_838_400.0, 1e-3);
+    try std.testing.expectApproxEqAbs(ps.radius, 6_371_000.0, 1e-3);
 }
 
 test "Scale: W at pole = 1" {
@@ -364,9 +401,9 @@ test "Scale: projectiveSubspaceAngle at W-axis ≈ 0°" {
     try std.testing.expectApproxEqAbs(angle, 0.0, 1.0);
 }
 
-test "Scale: orderChaosAngle at Z-axis ≈ 90°" {
+test "Scale: projectiveSubspaceAngle at Z-axis ≈ 90°" {
     const p = HomVec4.init(0, 0, 1, 0); // pure Z
-    const angle = orderChaosAngle(p);
+    const angle = projectiveSubspaceAngle(p);
     try std.testing.expectApproxEqAbs(angle, 90.0, 1.0);
 }
 
@@ -376,13 +413,13 @@ test "Scale: operationalTime basic" {
 }
 
 test "Scale: transitAngle is tiny" {
-    const ps = PlanetScale.etheria();
+    const ps = PlanetScale.defaultSphere();
     try std.testing.expect(ps.transitAngle() < 1e-8);
 }
 
 test "Scale: PlanetScale circumference" {
-    const ps = PlanetScale.etheria();
-    const expected = 2.0 * math.pi * 5_838_400.0;
+    const ps = PlanetScale.defaultSphere();
+    const expected = 2.0 * math.pi * 6_371_000.0;
     try std.testing.expectApproxEqAbs(ps.circumference, expected, 1.0);
 }
 
@@ -403,4 +440,23 @@ test "Scale: fromMassAndDensity astrophysics" {
     try std.testing.expectApproxEqAbs(v_esc, 8262.0, 20.0); // ~8.26 km/s
     const osc = custom.phaseOscillation(0.0, 1.0);
     try std.testing.expectApproxEqAbs(osc, 0.0, 1e-6);
+}
+
+test "AstronomyTools: Kepler period, Synodic period, Solar Flux" {
+    // Kepler 3rd law: a = 2.3 AU -> T = sqrt(2.3^3) ~ 3.488 years
+    const t_years = AstronomyTools.orbitPeriodYears(2.3);
+    try std.testing.expectApproxEqAbs(t_years, 3.4881, 0.01);
+
+    // Synodic period: Earth (1 yr) and 3.488 yr body -> 1/(1 - 1/3.488) ~ 1.402 yr
+    const p_syn = AstronomyTools.synodicPeriod(1.0, t_years);
+    try std.testing.expectApproxEqAbs(p_syn, 1.4019, 0.01);
+
+    // Solar flux at 1 AU (L_sun = 3.828e26 W, d = 1.496e11 m -> ~1361 W/m2)
+    const flux_earth = AstronomyTools.solarFlux(AstronomyTools.L_SUN, AstronomyTools.AU);
+    try std.testing.expectApproxEqAbs(flux_earth, 1361.0, 10.0);
+
+    // Equilibrium temperature of blackbody at 2.3 AU (flux = 1361 / 2.3^2 ~ 257.3 W/m2, A = 0 -> ~183.5 K)
+    const flux_custom = AstronomyTools.solarFlux(AstronomyTools.L_SUN, 2.3 * AstronomyTools.AU);
+    const t_eq = AstronomyTools.equilibriumTemperature(flux_custom, 0.0);
+    try std.testing.expectApproxEqAbs(t_eq, 183.5, 1.0);
 }

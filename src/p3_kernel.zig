@@ -23,23 +23,20 @@ const math = std.math;
 // 0. ФИЗИЧЕСКИЕ И МАТЕМАТИЧЕСКИЕ КОНСТАНТЫ
 // =============================================================================
 
-/// Стандартный планетарный радиус S³ (км)
-pub const R_DEFAULT_PLANET_KM: f64 = 5838.4;
-pub const R_ETERIA_KM: f64 = R_DEFAULT_PLANET_KM; // Alias for backwards compatibility
-/// Радиус Земли (км)
+/// Стандартный планетарный радиус S³ (км) (по умолчанию — радиус Земли 6378.0 км)
 pub const R_EARTH_KM: f64 = 6378.0;
-/// Константа анизотропии K_aniso = 9/7 ≈ 1.28571
-pub const K_ANISO: f64 = 9.0 / 7.0;
+pub const R_DEFAULT_PLANET_KM: f64 = R_EARTH_KM;
+/// Константа анизотропии по умолчанию (1.0 = изотропное пространство)
+pub const K_ANISO: f64 = 1.0;
 /// Золотой угол суб-радиальных преобразований: λ = π × 10⁻¹⁰ рад
 pub const GOLDEN_ANGLE: f64 = math.pi * 1e-10;
-/// Базовая резонансная частота (Гц)
-pub const RESONANCE_HZ: f64 = 18.7;
-/// Сферический угловой сдвиг координат (рад)
-pub const DELTA_LAT: f64 = 0.6533;
-pub const DELTA_LON: f64 = 4.1567;
-/// Астрономическое базовое расстояние (а.е.)
-pub const D_DEFAULT_AU: f64 = 1.3;
-pub const D_ETERIA_AU: f64 = D_DEFAULT_AU; // Alias for backwards compatibility
+/// Базовая резонансная частота по умолчанию (Гц) (резонанс Шумана Земли ~ 7.83 Гц)
+pub const RESONANCE_HZ: f64 = 7.83;
+/// Сферический угловой сдвиг координат по умолчанию (рад)
+pub const DELTA_LAT: f64 = 0.0;
+pub const DELTA_LON: f64 = 0.0;
+/// Астрономическое базовое расстояние (1 а.е. в км)
+pub const D_DEFAULT_AU: f64 = 1.0;
 /// Порог переключения афинных карт
 pub const W_EPS: f64 = 1e-6;
 /// Ренормализация определителя каждые N шагов
@@ -882,7 +879,7 @@ test "Deformed tensor product: ε=0 is standard mul" {
 
 test "w_from_distance / s_from_W round-trip" {
     const s: f64 = 1000.0; // 1 км
-    const R: f64 = R_ETERIA_KM * 1000.0; // в метрах
+    const R: f64 = R_EARTH_KM * 1000.0; // в метрах
     const W = wFromDistance(s, R);
     const s_back = sFromW(W, R);
     // Round-trip через cos/arccos: потеря точности ожидаема

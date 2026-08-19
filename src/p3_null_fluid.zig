@@ -27,7 +27,7 @@ const deg_to_rad: f64 = math.pi / 180.0;
 // =============================================================================
 
 /// Конфигурация параметров фазовой границы и оптической среды.
-pub const NullFluidConfig = struct {
+pub const PhaseBoundaryConfig = struct {
     /// Критический угол (градусы) — порог фазового перехода
     theta_crit_deg: f64,
     /// Ширина переходной зоны (градусы)
@@ -47,43 +47,43 @@ pub const NullFluidConfig = struct {
     /// Коэффициент связи масштабирования времени
     kappa: f64,
 
-    /// Конфигурация по умолчанию (универсальная)
-    pub fn initDefault() NullFluidConfig {
+    /// Универсальная конфигурация по умолчанию (воздух/вакуум)
+    pub fn initDefault() PhaseBoundaryConfig {
         return .{
-            .theta_crit_deg = 85.0,
+            .theta_crit_deg = 45.0,
             .delta_deg = 5.0,
-            .n_omega = 2.05,
-            .eps_omega = 4.2,
-            .eps_chi = 1.8,
-            .c_light = 2.998e8,
-            .f_phi = 1.4e12,
-            .d_k = 0.02,
-            .kappa = 7.2,
+            .n_omega = 1.0,
+            .eps_omega = 1.0,
+            .eps_chi = 1.0,
+            .c_light = 2.99792458e8,
+            .f_phi = 1.0e9,
+            .d_k = 0.01,
+            .kappa = 1.0,
         };
     }
 
     /// Анизотропный коэффициент диэлектрической связи: κ = |ε₂| / ε₁
-    pub inline fn kappaPhi(self: NullFluidConfig) f64 {
+    pub inline fn kappaPhi(self: PhaseBoundaryConfig) f64 {
         return self.eps_chi / self.eps_omega;
     }
 
     /// Фундаментальный шаг квантования: d_0 = d_K / 1.5
-    pub inline fn d0(self: NullFluidConfig) f64 {
+    pub inline fn d0(self: PhaseBoundaryConfig) f64 {
         return self.d_k / 1.5;
     }
 
     /// Скорость распространения в среде: c_medium = c / √n₁ (м/с)
-    pub inline fn cPhi(self: NullFluidConfig) f64 {
+    pub inline fn cPhi(self: PhaseBoundaryConfig) f64 {
         return self.c_light / @sqrt(self.n_omega);
     }
 
     /// Характеристическое время релаксации: τ = 1/f (с)
-    pub inline fn tauRelax(self: NullFluidConfig) f64 {
+    pub inline fn tauRelax(self: PhaseBoundaryConfig) f64 {
         return 1.0 / self.f_phi;
     }
 };
 
-pub const PhaseBoundaryConfig = NullFluidConfig;
+pub const NullFluidConfig = PhaseBoundaryConfig;
 
 // =============================================================================
 // 2. ПРОЕКТИВНАЯ ПЛОТНОСТЬ ПЕРЕХОДА
@@ -109,6 +109,9 @@ pub fn nullFluidDensitySmallAngle(theta_deg: f64, theta_crit_deg: f64) f64 {
     const diff_rad = deg_to_rad * (theta_deg - theta_crit_deg);
     return diff_rad * diff_rad;
 }
+
+pub const criticalDensityExact = nullFluidDensityExact;
+pub const criticalDensitySmallAngle = nullFluidDensitySmallAngle;
 
 // =============================================================================
 // 3. ПРОЕКТИВНАЯ ОПТИКА
@@ -259,8 +262,6 @@ pub const DrudeReflectorOptics = struct {
     }
 };
 
-pub const BlackMirrorOptics = DrudeReflectorOptics; // Backwards compatibility alias
-
 // =============================================================================
 // 8. ПАРАМЕТРИЧЕСКИЕ СВОЙСТВА МАТЕРИАЛОВ
 // =============================================================================
@@ -278,13 +279,11 @@ pub const ChemicalSpecies = struct {
     pub inline fn isBelowThreshold(self: ChemicalSpecies) bool {
         return self.sigma_e < self.stability_threshold;
     }
-
-    pub const cnedRisk = isBelowThreshold; // Alias for compatibility
 };
 
 /// Пространственная зона среды с заданными физическими свойствами.
 pub const MediumZone = struct {
-    cfg: NullFluidConfig,
+    cfg: PhaseBoundaryConfig,
     /// Максимальный радиус зоны (м)
     r_0: f64,
     /// Проводимость среды
@@ -301,12 +300,7 @@ pub const MediumZone = struct {
     pub inline fn isBelowThreshold(self: MediumZone) bool {
         return self.sigma_e < self.stability_threshold;
     }
-
-    pub const infoTime = signalTime;
-    pub const cnedRisk = isBelowThreshold;
 };
-
-pub const NullFluidZone = MediumZone; // Alias for compatibility
 
 // =============================================================================
 // 9. ГЕОДЕЗИЧЕСКИЕ ТОЧКИ НА СФЕРЕ S³
@@ -331,43 +325,43 @@ pub fn circlePoint(k: u32, n: u32, theta_deg: f64) [4]f64 {
 // 10. ТЕСТЫ
 // =============================================================================
 
-test "nullFluidDensityExact: zero below θ_crit" {
-    const cfg = NullFluidConfig.initDefault();
-    try std.testing.expectApproxEqAbs(nullFluidDensityExact(80.0, cfg.theta_crit_deg), 0.0, 1e-10);
-    try std.testing.expectApproxEqAbs(nullFluidDensityExact(85.0, cfg.theta_crit_deg), 0.0, 1e-10);
+test "PhaseBoundary: zero below theta_crit" {
+    const cfg = PhaseBoundaryConfig.initDefault();
+    try std.testing.expectApproxEqAbs(criticalDensityExact(cfg.theta_crit_deg - 5.0, cfg.theta_crit_deg), 0.0, 1e-10);
+    try std.testing.expectApproxEqAbs(criticalDensityExact(cfg.theta_crit_deg, cfg.theta_crit_deg), 0.0, 1e-10);
 }
 
-test "nullFluidDensityExact: sin² at θ = 90°" {
-    const cfg = NullFluidConfig.initDefault();
-    const rho = nullFluidDensityExact(90.0, cfg.theta_crit_deg);
+test "PhaseBoundary: sin² at theta = theta_crit + 5°" {
+    const cfg = PhaseBoundaryConfig.initDefault();
+    const rho = criticalDensityExact(cfg.theta_crit_deg + 5.0, cfg.theta_crit_deg);
     const expected = math.sin(5.0 * deg_to_rad) * math.sin(5.0 * deg_to_rad);
     try std.testing.expectApproxEqAbs(rho, expected, 1e-10);
 }
 
-test "nullFluidDensityExact: increases monotonically" {
-    const cfg = NullFluidConfig.initDefault();
-    const rho_86 = nullFluidDensityExact(86.0, cfg.theta_crit_deg);
-    const rho_87 = nullFluidDensityExact(87.0, cfg.theta_crit_deg);
-    const rho_88 = nullFluidDensityExact(88.0, cfg.theta_crit_deg);
-    try std.testing.expect(rho_86 < rho_87);
-    try std.testing.expect(rho_87 < rho_88);
+test "PhaseBoundary: increases monotonically" {
+    const cfg = PhaseBoundaryConfig.initDefault();
+    const rho_1 = criticalDensityExact(cfg.theta_crit_deg + 1.0, cfg.theta_crit_deg);
+    const rho_2 = criticalDensityExact(cfg.theta_crit_deg + 2.0, cfg.theta_crit_deg);
+    const rho_3 = criticalDensityExact(cfg.theta_crit_deg + 3.0, cfg.theta_crit_deg);
+    try std.testing.expect(rho_1 < rho_2);
+    try std.testing.expect(rho_2 < rho_3);
 }
 
-test "nullFluidDensityExact vs small-angle: agree near θ_crit" {
-    const cfg = NullFluidConfig.initDefault();
-    const rho_exact = nullFluidDensityExact(85.5, cfg.theta_crit_deg);
-    const rho_small = nullFluidDensitySmallAngle(85.5, cfg.theta_crit_deg);
+test "PhaseBoundary vs small-angle: agree near theta_crit" {
+    const cfg = PhaseBoundaryConfig.initDefault();
+    const rho_exact = criticalDensityExact(cfg.theta_crit_deg + 0.5, cfg.theta_crit_deg);
+    const rho_small = criticalDensitySmallAngle(cfg.theta_crit_deg + 0.5, cfg.theta_crit_deg);
     try std.testing.expectApproxEqAbs(rho_exact, rho_small, rho_exact * 0.02);
 }
 
 test "PhaseBoundary: non-zero at theta = 90 deg" {
-    const cfg = NullFluidConfig.initDefault();
+    const cfg = PhaseBoundaryConfig.initDefault();
     const rho = nullFluidDensityExact(90.0, cfg.theta_crit_deg);
     try std.testing.expect(rho > 0.0);
 }
 
-test "NullFluidConfig: custom parameters" {
-    const cfg = NullFluidConfig{
+test "PhaseBoundaryConfig: custom parameters" {
+    const cfg = PhaseBoundaryConfig{
         .theta_crit_deg = 80.0,
         .delta_deg = 10.0,
         .n_omega = 1.5,
@@ -383,7 +377,17 @@ test "NullFluidConfig: custom parameters" {
 }
 
 test "ProjectiveOptics: compute values" {
-    const cfg = NullFluidConfig.initDefault();
+    const cfg = PhaseBoundaryConfig{
+        .theta_crit_deg = 45.0,
+        .delta_deg = 5.0,
+        .n_omega = 2.05,
+        .eps_omega = 4.2,
+        .eps_chi = 1.8,
+        .c_light = 2.998e8,
+        .f_phi = 1.4e12,
+        .d_k = 0.02,
+        .kappa = 7.2,
+    };
     const optics = ProjectiveOptics.compute(cfg);
     try std.testing.expectApproxEqAbs(optics.kappa_phi, 1.8 / 4.2, 1e-10);
     try std.testing.expect(optics.n_null_abs > 1.0);
@@ -457,9 +461,9 @@ test "ChemicalSpecies: stability threshold" {
     try std.testing.expect(!species2.isBelowThreshold());
 }
 
-test "NullFluidZone: signal propagation time" {
-    const zone = NullFluidZone{
-        .cfg = NullFluidConfig.initDefault(),
+test "MediumZone: signal propagation time" {
+    const zone = MediumZone{
+        .cfg = PhaseBoundaryConfig.initDefault(),
         .r_0 = 0.5,
         .sigma_e = 4.0,
         .stability_threshold = 5.0,
