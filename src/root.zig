@@ -42,6 +42,7 @@ pub const ui = struct {
     pub const dragdrop = @import("p3_ui_dragdrop.zig");
     pub const navigation = @import("p3_ui_navigation.zig");
     pub const render = @import("p3_ui_render.zig");
+    pub const raylib = @import("p3_ui_raylib.zig");
 };
 
 // Top-Level Unified `p3` Namespace
