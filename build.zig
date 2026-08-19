@@ -85,6 +85,7 @@ pub fn build(b: *std.Build) void {
         .{ "quasirandom",    "src/p3_quasirandom.zig" },
         .{ "archetype",      "src/p3_archetype.zig" },
         .{ "procedural_mesh","src/p3_procedural_mesh.zig" },
+        .{ "vision",         "src/p3_vision.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---

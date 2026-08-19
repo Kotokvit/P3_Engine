@@ -64,11 +64,14 @@ pub const p3 = struct {
     pub const renderer = @import("p3_renderer.zig");
     pub const ui = @import("root.zig").ui;
     pub const procedural_mesh = @import("p3_procedural_mesh.zig");
+    pub const vision = @import("p3_vision.zig");
 };
 
 pub const generateSpaceshipMesh = @import("p3_procedural_mesh.zig").generateSpaceshipMesh;
 pub const ProceduralMesh = @import("p3_procedural_mesh.zig").ProceduralMesh;
 pub const ShipHullConfig = @import("p3_procedural_mesh.zig").ShipHullConfig;
+pub const VisualFrameBuffer = @import("p3_vision.zig").VisualFrameBuffer;
+pub const ProjectiveRasterizer = @import("p3_vision.zig").ProjectiveRasterizer;
 
 // Core Geometric & Mathematical Primitives (Direct Export)
 pub const Vec2 = math.Vec2;
