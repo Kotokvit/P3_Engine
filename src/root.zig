@@ -72,6 +72,10 @@ pub const ProceduralMesh = @import("p3_procedural_mesh.zig").ProceduralMesh;
 pub const ShipHullConfig = @import("p3_procedural_mesh.zig").ShipHullConfig;
 pub const VisualFrameBuffer = @import("p3_vision.zig").VisualFrameBuffer;
 pub const ProjectiveRasterizer = @import("p3_vision.zig").ProjectiveRasterizer;
+pub const VisualObservation = @import("p3_vision.zig").VisualObservation;
+pub const ObservationPublisher = @import("p3_vision.zig").ObservationPublisher;
+pub const AgentAction = @import("p3_vision.zig").AgentAction;
+pub const ActionBus = @import("p3_vision.zig").ActionBus;
 
 // Core Geometric & Mathematical Primitives (Direct Export)
 pub const Vec2 = math.Vec2;
