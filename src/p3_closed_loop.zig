@@ -595,6 +595,43 @@ fn renderScene(state: *const SceneState, fb: *VisualFrameBuffer) !void {
 }
 
 // ===========================================================================
+// Scene state JSON serializer — for high-level action targeting.
+// LLM gets asteroid world positions so it can call
+// {"action": "aim_at", "position": [5.0, 0.5, 3.0]}
+// without needing to know internal indexing.
+// ===========================================================================
+fn serializeSceneStateJson(allocator: std.mem.Allocator, state: *const SceneState, action_note: []const u8) ![]u8 {
+    var buf = std.ArrayList(u8).init(allocator);
+    errdefer buf.deinit();
+    var w = buf.writer();
+
+    try w.print("{{\n", .{});
+    try w.print("  \"camera\": {{ \"eye\": [{d:.4}, {d:.4}, {d:.4}], \"target\": [{d:.4}, {d:.4}, {d:.4}], \"yaw_deg\": {d:.2}, \"pitch_deg\": {d:.2}, \"distance\": {d:.2} }},\n", .{
+        state.cameraEye().x, state.cameraEye().y, state.cameraEye().z,
+        state.camera_target.x, state.camera_target.y, state.camera_target.z,
+        state.camera_yaw * 180.0 / math.pi, state.camera_pitch * 180.0 / math.pi,
+        state.camera_distance,
+    });
+    try w.print("  \"tank\": {{ \"position\": [{d:.4}, {d:.4}, {d:.4}], \"yaw_deg\": {d:.2}, \"pitch_deg\": {d:.2} }},\n", .{
+        state.tank_position.x, state.tank_position.y, state.tank_position.z,
+        state.tank_yaw * 180.0 / math.pi, state.tank_pitch * 180.0 / math.pi,
+    });
+    try w.print("  \"asteroid_count\": {d},\n", .{state.asteroids.items.len});
+    try w.print("  \"asteroids\": [\n", .{});
+    for (state.asteroids.items, 0..) |a, i| {
+        if (i > 0) try w.writeAll(",\n");
+        try w.print("    {{ \"index\": {d}, \"position\": [{d:.4}, {d:.4}, {d:.4}], \"scale\": {d:.4}, \"rotation_angle\": {d:.4} }}", .{
+            i, a.position.x, a.position.y, a.position.z, a.scale, a.rotation_angle,
+        });
+    }
+    try w.print("\n  ],\n", .{});
+    try w.print("  \"action_note\": \"{s}\"\n", .{action_note});
+    try w.print("}}", .{});
+
+    return buf.toOwnedSlice();
+}
+
+// ===========================================================================
 // OUTPUT: PPM → PNG conversion happens in Python after; here we write PPM
 // + raw depth + raw segmentation + JSON sidecar.
 // ===========================================================================
@@ -714,6 +751,79 @@ fn applyAction(state: *SceneState, action: ActionStruct) void {
         state.tank_yaw = 0.0;
         state.tank_pitch = 0.0;
         state.tank_position = Vec3.init(0.0, 1.2, 0.0);
+    } else if (std.mem.eql(u8, name, "aim_at")) {
+        // High-level action: aim tank barrel at world position (x, y, z).
+        // Engine computes the yaw + pitch angles automatically.
+        // This is the VLA-style "high-level primitive" — LLM specifies
+        // GOAL (where to aim), not MECHANISM (how many degrees to rotate).
+        if (action.position) |pos| {
+            const target = Vec3.init(pos[0], pos[1], pos[2]);
+            const delta = target.sub(state.tank_position);
+            // Yaw (around Y): atan2(dx, dz) — but careful with sign convention
+            const yaw_rad = std.math.atan2(delta.x, delta.z);
+            // Pitch (around X): atan2(dy, sqrt(dx^2 + dz^2)) — aim up/down
+            const horizontal_dist = @sqrt(delta.x * delta.x + delta.z * delta.z);
+            const pitch_rad = std.math.atan2(delta.y, horizontal_dist);
+            state.tank_yaw = yaw_rad;
+            state.tank_pitch = pitch_rad;
+        }
+    } else if (std.mem.eql(u8, name, "approach_entity")) {
+        // High-level: move tank toward world position by `forward` units
+        // (default 1.0). Tank moves in its forward direction (current yaw).
+        // If `position` is provided, first reorient tank yaw toward target,
+        // then move forward.
+        if (action.position) |pos| {
+            const target = Vec3.init(pos[0], pos[1], pos[2]);
+            const delta = target.sub(state.tank_position);
+            const yaw_rad = std.math.atan2(delta.x, delta.z);
+            state.tank_yaw = yaw_rad;
+            // Move forward by `value` units (default 1.0)
+            const move_dist: f32 = if (action.value) |v| v else 1.0;
+            const horizontal_dist = @sqrt(delta.x * delta.x + delta.z * delta.z);
+            if (horizontal_dist > 0.001) {
+                const dir_x = delta.x / horizontal_dist;
+                const dir_z = delta.z / horizontal_dist;
+                // Don't overshoot: move at most min(move_dist, horizontal_dist - 0.5)
+                const actual_move = @min(move_dist, @max(0.0, horizontal_dist - 0.5));
+                state.tank_position = Vec3.init(
+                    state.tank_position.x + dir_x * actual_move,
+                    state.tank_position.y,
+                    state.tank_position.z + dir_z * actual_move,
+                );
+            }
+        }
+    } else if (std.mem.eql(u8, name, "orbit_entity")) {
+        // High-level: orbit camera around a world position (entity of interest)
+        // by `yaw` degrees. Camera target shifts to the entity, then camera
+        // orbits around it.
+        if (action.position) |pos| {
+            state.camera_target = Vec3.init(pos[0], pos[1], pos[2]);
+            if (action.yaw) |y| state.camera_yaw += y * math.pi / 180.0;
+            if (action.pitch) |p| state.camera_pitch += p * math.pi / 180.0;
+        }
+    } else if (std.mem.eql(u8, name, "follow_entity")) {
+        // High-level: combination of aim_at + approach_entity. Aim barrel
+        // at the entity, then move toward it by `value` units.
+        if (action.position) |pos| {
+            const target = Vec3.init(pos[0], pos[1], pos[2]);
+            const delta = target.sub(state.tank_position);
+            const yaw_rad = std.math.atan2(delta.x, delta.z);
+            const horizontal_dist = @sqrt(delta.x * delta.x + delta.z * delta.z);
+            const pitch_rad = std.math.atan2(delta.y, horizontal_dist);
+            state.tank_yaw = yaw_rad;
+            state.tank_pitch = pitch_rad;
+            const move_dist: f32 = if (action.value) |v| v else 1.0;
+            if (horizontal_dist > 0.001) {
+                const dir_x = delta.x / horizontal_dist;
+                const dir_z = delta.z / horizontal_dist;
+                const actual_move = @min(move_dist, @max(0.0, horizontal_dist - 0.5));
+                state.tank_position = Vec3.init(
+                    state.tank_position.x + dir_x * actual_move,
+                    state.tank_position.y,
+                    state.tank_position.z + dir_z * actual_move,
+                );
+            }
+        }
     }
     // advance sim time
     state.sim_time += 0.0166; // 60 FPS
@@ -767,6 +877,12 @@ pub fn main() !void {
     var fb = try VisualFrameBuffer.init(allocator, RENDER_WIDTH, RENDER_HEIGHT);
     defer fb.deinit();
 
+    // --- Init temporal tracker (persists state across frames) ---
+    // This is the "real computer vision" — tracks objects across frames,
+    // computes velocity, maintains stable track_ids for the LLM agent.
+    var tracker = vision.Tracker.init(allocator);
+    defer tracker.deinit();
+
     // --- Loop through actions ---
     // The first action is typically "initial" — render the starting state
     // before any mutation. Subsequent actions mutate state then render.
@@ -798,12 +914,47 @@ pub fn main() !void {
 
         var obs = vision.analyzeFrameBuffer(&fb, allocator, state.frame_id, state.sim_time) catch continue;
         defer obs.deinit();
+
+        // Run temporal tracker — stamps entities with stable track_id + velocity
+        // (persists across frames via the `tracker` struct outside the loop).
+        // This is what gives the LLM agent continuity: "asteroid with track_id=3
+        // is the same one I saw 3 frames ago, moving at velocity (1.4, 0.7) px/frame".
+        tracker.update(obs.entities, state.frame_id) catch {};
+
+        // Build scene graph from tracker's tracks — encodes parent/child/neighbor
+        // relationships. Helps the LLM understand spatial structure
+        // ("tank is inside planet's bbox; asteroid_3 is near tank").
+        var graph = vision.buildSceneGraph(allocator, tracker.tracks.items, 200.0) catch continue;
+        defer graph.deinit();
+
+        // Serialize base CV observation + scene graph + scene_state (asteroid
+        // world positions for high-level action targeting)
         const obs_json = vision.serializeObservationJson(&obs, allocator) catch continue;
         defer allocator.free(obs_json);
+        const sg_json = vision.serializeSceneGraphJson(&graph, allocator) catch continue;
+        defer allocator.free(sg_json);
+        const scene_json = try serializeSceneStateJson(allocator, &state, note);
+        defer allocator.free(scene_json);
+
+        // Combine into a single observation file for the LLM agent.
+        // This is the ONLY file the agent needs per frame:
+        //   - visible_entities (with track_id + velocity)
+        //   - scene_graph (parent/child/neighbors)
+        //   - scene_state (asteroid world positions for aim_at/approach/orbit)
+        //   - depth_stats, anomalies
         {
             var of = std.fs.cwd().createFile(obs_path, .{}) catch continue;
             defer of.close();
+            try of.writeAll("{\n  \"observation\": ");
             try of.writeAll(obs_json);
+            // Strip outermost braces of obs_json to embed cleanly — or just append:
+            // Actually obs_json is a complete JSON object, we can reference it.
+            // For simplicity, write as separate top-level fields:
+            try of.writeAll(",\n  \"scene_graph\": ");
+            try of.writeAll(sg_json);
+            try of.writeAll(",\n  \"scene_state\": ");
+            try of.writeAll(scene_json);
+            try of.writeAll("\n}\n");
         }
 
         // PNG / depth / seg files are debug-only — only write when

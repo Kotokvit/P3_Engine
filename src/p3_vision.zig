@@ -397,6 +397,17 @@ pub const VisibleEntity = struct {
     depth_min: f32,
     depth_max: f32,
     depth_sum: f32,
+    /// Temporal tracking fields (populated by Tracker.update).
+    /// Stable across frames — same object gets same track_id.
+    /// 0 = no tracker assigned yet (e.g., first frame).
+    track_id: u32 = 0,
+    /// Velocity (pixels per frame): how fast centroid is moving
+    velocity_x: f32 = 0,
+    velocity_y: f32 = 0,
+    /// How many frames this entity has been tracked
+    age_frames: u32 = 0,
+    /// How many frames since last seen (0 = currently visible)
+    lost_frames: u32 = 0,
 };
 
 pub const Anomaly = struct {
@@ -634,12 +645,13 @@ pub fn serializeObservationJson(obs: *const Observation, allocator: std.mem.Allo
     try w.print("  \"visible_entities\": [\n", .{});
     for (obs.entities, 0..) |e, i| {
         if (i > 0) try w.writeAll(",\n");
-        try w.print("    {{ \"id\": {d}, \"type\": \"{s}\", \"pixel_count\": {d}, \"centroid\": [{d:.1}, {d:.1}], \"bbox\": [{d}, {d}, {d}, {d}], \"depth_min\": {d:.4}, \"depth_max\": {d:.4}, \"depth_mean\": {d:.4} }}", .{
+        try w.print("    {{ \"id\": {d}, \"type\": \"{s}\", \"pixel_count\": {d}, \"centroid\": [{d:.1}, {d:.1}], \"bbox\": [{d}, {d}, {d}, {d}], \"depth_min\": {d:.4}, \"depth_max\": {d:.4}, \"depth_mean\": {d:.4}, \"track_id\": {d}, \"velocity\": [{d:.2}, {d:.2}], \"age_frames\": {d}, \"lost_frames\": {d} }}", .{
             e.entity_id, entityTypeName(e.entity_id), e.pixel_count,
             e.centroid_x, e.centroid_y,
             e.bbox_min_x, e.bbox_min_y, e.bbox_max_x, e.bbox_max_y,
             e.depth_min, e.depth_max,
             if (e.pixel_count > 0) e.depth_sum / @as(f32, @floatFromInt(e.pixel_count)) else 0,
+            e.track_id, e.velocity_x, e.velocity_y, e.age_frames, e.lost_frames,
         });
     }
     try w.print("\n  ],\n", .{});
@@ -722,3 +734,501 @@ test "ProjectiveVision: native CV analyzer produces structured observation" {
     try std.testing.expect(std.mem.indexOf(u8, json, "\"type\": \"asteroid\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, json, "\"frame_id\": 42") != null);
 }
+
+// =============================================================================
+// TEMPORAL TRACKER (Classical Multi-Object Centroid Tracking)
+// =============================================================================
+//
+// Inspired by AI2-THOR's instance_detections2D + SORT (Simple Online Realtime
+// Tracking) by Bewley et al. — pure classical algorithms, NO neural networks.
+//
+// The Tracker keeps state across frames. On each call to update(), it:
+//   1. Receives the new frame's per-entity VisibleEntity[] (with centroids)
+//   2. For each track from previous frame, finds the closest new detection
+//      (greedy matching by Euclidean centroid distance, with gating threshold)
+//   3. Updates the matched track's centroid (smoothing with simple low-pass)
+//   4. Increments age_frames for matched tracks, lost_frames for unmatched
+//   5. Creates new tracks for unmatched detections (after max_age_frames in
+//      a frame, gets a stable track_id)
+//   6. Deletes tracks that have been lost for > max_lost_frames
+//
+// Output: each VisibleEntity gets a stable track_id (same object across frames
+// gets same track_id) + velocity_x/y (centroid delta) + age_frames + lost_frames
+//
+// This solves the "is asteroid #5 on frame N the same as on frame N-1?" problem
+// for the LLM agent — without any neural network, just classical CV.
+// =============================================================================
+
+pub const TrackedEntity = struct {
+    /// Stable identifier across frames (assigned when track is created)
+    track_id: u32,
+    /// Entity id from segmentation buffer (planet=1, asteroid=3, etc.)
+    entity_id: u8,
+    /// Current smoothed centroid (screen X, Y)
+    centroid_x: f32,
+    centroid_y: f32,
+    /// Velocity (pixels per frame): current - previous centroid
+    velocity_x: f32,
+    velocity_y: f32,
+    /// Number of frames this track has been alive
+    age_frames: u32,
+    /// Number of consecutive frames this track has been unmatched
+    lost_frames: u32,
+    /// Bounding box from latest observation
+    bbox_min_x: usize,
+    bbox_min_y: usize,
+    bbox_max_x: usize,
+    bbox_max_y: usize,
+    /// Pixel count from latest observation
+    pixel_count: usize,
+    /// Depth stats from latest observation
+    depth_min: f32,
+    depth_max: f32,
+    depth_mean: f32,
+};
+
+pub const Tracker = struct {
+    /// Active tracks
+    tracks: std.ArrayList(TrackedEntity),
+    /// Next available track_id (incremented per new track)
+    next_track_id: u32 = 1,
+    /// Max centroid distance for matching (pixels)
+    match_distance_threshold: f32 = 80.0,
+    /// Frames a track can be lost before deletion
+    max_lost_frames: u32 = 5,
+    /// Frames a track must exist before being reported as "stable"
+    min_age_for_report: u32 = 0,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) Tracker {
+        return .{
+            .tracks = std.ArrayList(TrackedEntity).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Tracker) void {
+        self.tracks.deinit();
+    }
+
+    /// Update tracker with new frame's detections. Modifies `entities` in
+    /// place — fills in track_id, velocity, age_frames for matched entities.
+    /// Tracks that disappear are removed (after max_lost_frames).
+    pub fn update(
+        self: *Tracker,
+        entities: []VisibleEntity,
+        frame_id: u64,
+    ) !void {
+        _ = frame_id;
+        // For each existing track, find best matching entity (closest centroid
+        // within threshold, same entity_id). Greedy nearest-neighbor matching.
+        const n_tracks = self.tracks.items.len;
+        const n_entities = entities.len;
+
+        // Build a "matched" flag array for entities
+        const matched_entities = try self.allocator.alloc(bool, n_entities);
+        defer self.allocator.free(matched_entities);
+        @memset(matched_entities, false);
+
+        const matched_tracks = try self.allocator.alloc(bool, n_tracks);
+        defer self.allocator.free(matched_tracks);
+        @memset(matched_tracks, false);
+
+        // Greedy matching: for each track, find closest unmatched entity
+        // with same entity_id, within threshold
+        var ti: usize = 0;
+        while (ti < n_tracks) : (ti += 1) {
+            const track = &self.tracks.items[ti];
+            var best_entity_idx: ?usize = null;
+            var best_dist: f32 = self.match_distance_threshold;
+
+            var ei: usize = 0;
+            while (ei < n_entities) : (ei += 1) {
+                if (matched_entities[ei]) continue;
+                if (entities[ei].entity_id != track.entity_id) continue;
+
+                const dx = entities[ei].centroid_x - track.centroid_x;
+                const dy = entities[ei].centroid_y - track.centroid_y;
+                const dist = @sqrt(dx * dx + dy * dy);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    best_entity_idx = ei;
+                }
+            }
+
+            if (best_entity_idx) |idx| {
+                matched_tracks[ti] = true;
+                matched_entities[idx] = true;
+                // Update track with new detection
+                const e = &entities[idx];
+                const prev_cx = track.centroid_x;
+                const prev_cy = track.centroid_y;
+                // Simple low-pass smoothing: new = 0.7*new + 0.3*old (reduces jitter)
+                track.centroid_x = e.centroid_x * 0.7 + prev_cx * 0.3;
+                track.centroid_y = e.centroid_y * 0.7 + prev_cy * 0.3;
+                track.velocity_x = track.centroid_x - prev_cx;
+                track.velocity_y = track.centroid_y - prev_cy;
+                track.age_frames += 1;
+                track.lost_frames = 0;
+                track.bbox_min_x = e.bbox_min_x;
+                track.bbox_min_y = e.bbox_min_y;
+                track.bbox_max_x = e.bbox_max_x;
+                track.bbox_max_y = e.bbox_max_y;
+                track.pixel_count = e.pixel_count;
+                track.depth_min = e.depth_min;
+                track.depth_max = e.depth_max;
+                track.depth_mean = if (e.pixel_count > 0) e.depth_sum / @as(f32, @floatFromInt(e.pixel_count)) else 0;
+                // Stamp the entity with the track_id + velocity
+                e.track_id = track.track_id;
+                e.velocity_x = track.velocity_x;
+                e.velocity_y = track.velocity_y;
+                e.age_frames = track.age_frames;
+                e.lost_frames = 0;
+            }
+        }
+
+        // Remove tracks that have been lost for too long
+        // (compact in place)
+        var write_idx: usize = 0;
+        var track_idx: usize = 0;
+        while (track_idx < n_tracks) : (track_idx += 1) {
+            const t = &self.tracks.items[track_idx];
+            if (!matched_tracks[track_idx]) {
+                t.lost_frames += 1;
+                if (t.lost_frames > self.max_lost_frames) {
+                    // Drop this track
+                    continue;
+                }
+            }
+            self.tracks.items[write_idx] = t.*;
+            write_idx += 1;
+        }
+        self.tracks.shrinkRetainingCapacity(write_idx);
+
+        // Create new tracks for unmatched entities
+        for (entities, 0..) |*e, ei| {
+            if (matched_entities[ei]) continue;
+            // Skip "void" entity (background)
+            if (e.entity_id == 0) continue;
+
+            const new_track = TrackedEntity{
+                .track_id = self.next_track_id,
+                .entity_id = e.entity_id,
+                .centroid_x = e.centroid_x,
+                .centroid_y = e.centroid_y,
+                .velocity_x = 0,
+                .velocity_y = 0,
+                .age_frames = 1,
+                .lost_frames = 0,
+                .bbox_min_x = e.bbox_min_x,
+                .bbox_min_y = e.bbox_min_y,
+                .bbox_max_x = e.bbox_max_x,
+                .bbox_max_y = e.bbox_max_y,
+                .pixel_count = e.pixel_count,
+                .depth_min = e.depth_min,
+                .depth_max = e.depth_max,
+                .depth_mean = if (e.pixel_count > 0) e.depth_sum / @as(f32, @floatFromInt(e.pixel_count)) else 0,
+            };
+            try self.tracks.append(new_track);
+            self.next_track_id += 1;
+
+            // Stamp the entity with the new track_id
+            e.track_id = new_track.track_id;
+            e.velocity_x = 0;
+            e.velocity_y = 0;
+            e.age_frames = 1;
+            e.lost_frames = 0;
+        }
+    }
+
+    /// Returns the current snapshot of all active tracks (useful for
+    /// rendering debug overlays or for the agent to query "where are
+    /// the persistent objects even if currently occluded").
+    pub fn getActiveTracks(self: *const Tracker) []const TrackedEntity {
+        return self.tracks.items;
+    }
+};
+
+// =============================================================================
+// SCENE GRAPH — spatial relationships between visible entities
+// =============================================================================
+//
+// Builds a simple scene graph by computing spatial proximity:
+//   - For each tracked entity, find its "parent" — the nearest larger
+//     entity that contains or is near its centroid.
+//   - "children" — entities whose centroids fall within or very close to
+//     this entity's bounding box.
+//   - "neighbors" — entities within a configurable proximity radius
+//     (not parent/child but spatially adjacent).
+//
+// This is what DeepSeek meant by "Scene Graph access" — gives the LLM
+// relational understanding, not just pixel stats.
+// =============================================================================
+
+pub const SceneGraphNode = struct {
+    track_id: u32,
+    entity_id: u8,
+    parent_track_id: ?u32 = null,
+    children_count: u32 = 0,
+    /// Track IDs of children (up to 8 — enough for our scene)
+    children: [8]u32 = .{0} ** 8,
+    neighbors_count: u32 = 0,
+    neighbors: [4]u32 = .{0} ** 4,
+};
+
+pub const SceneGraph = struct {
+    nodes: std.ArrayList(SceneGraphNode),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) SceneGraph {
+        return .{
+            .nodes = std.ArrayList(SceneGraphNode).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *SceneGraph) void {
+        self.nodes.deinit();
+    }
+};
+
+/// Build a scene graph from a set of tracked entities.
+/// The graph encodes parent/child/neighbor relationships based on:
+///   - centroid containment (child's centroid inside parent's bbox)
+///   - spatial proximity (neighbors within neighbor_distance pixels)
+pub fn buildSceneGraph(
+    allocator: std.mem.Allocator,
+    tracked: []const TrackedEntity,
+    neighbor_distance: f32,
+) !SceneGraph {
+    var graph = SceneGraph.init(allocator);
+    errdefer graph.deinit();
+
+    // Create one node per tracked entity
+    for (tracked) |t| {
+        try graph.nodes.append(.{
+            .track_id = t.track_id,
+            .entity_id = t.entity_id,
+        });
+    }
+
+    // Compute parent-child: child's centroid is inside parent's bbox,
+    // AND parent has more pixels than child (parent is "larger").
+    var ci_local: usize = 0;
+    while (ci_local < tracked.len) : (ci_local += 1) {
+        var pi_local: usize = 0;
+        while (pi_local < tracked.len) : (pi_local += 1) {
+            if (ci_local == pi_local) continue;
+            const child = tracked[ci_local];
+            const parent = tracked[pi_local];
+            if (parent.pixel_count <= child.pixel_count) continue;
+            const cx_ok = child.centroid_x >= @as(f32, @floatFromInt(parent.bbox_min_x)) and
+                child.centroid_x <= @as(f32, @floatFromInt(parent.bbox_max_x));
+            const cy_ok = child.centroid_y >= @as(f32, @floatFromInt(parent.bbox_min_y)) and
+                child.centroid_y <= @as(f32, @floatFromInt(parent.bbox_max_y));
+            if (cx_ok and cy_ok) {
+                if (graph.nodes.items[ci_local].parent_track_id == null) {
+                    graph.nodes.items[ci_local].parent_track_id = parent.track_id;
+                    if (graph.nodes.items[pi_local].children_count < 8) {
+                        const cnt = graph.nodes.items[pi_local].children_count;
+                        graph.nodes.items[pi_local].children[cnt] = child.track_id;
+                        graph.nodes.items[pi_local].children_count += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Compute neighbors: entities within neighbor_distance pixels (centroid distance)
+    var ai_local: usize = 0;
+    while (ai_local < tracked.len) : (ai_local += 1) {
+        var bi_local: usize = 0;
+        while (bi_local < tracked.len) : (bi_local += 1) {
+            if (ai_local == bi_local) continue;
+            const a = tracked[ai_local];
+            const b = tracked[bi_local];
+            const dx = a.centroid_x - b.centroid_x;
+            const dy = a.centroid_y - b.centroid_y;
+            const dist = @sqrt(dx * dx + dy * dy);
+            if (dist < neighbor_distance and dist > 0.001) {
+                if (graph.nodes.items[ai_local].neighbors_count < 4) {
+                    const cnt = graph.nodes.items[ai_local].neighbors_count;
+                    graph.nodes.items[ai_local].neighbors[cnt] = b.track_id;
+                    graph.nodes.items[ai_local].neighbors_count += 1;
+                }
+            }
+        }
+    }
+
+    return graph;
+}
+
+/// Serialize the SceneGraph to JSON (compact form, ~500 bytes typical)
+pub fn serializeSceneGraphJson(graph: *const SceneGraph, allocator: std.mem.Allocator) ![]u8 {
+    var buf = std.ArrayList(u8).init(allocator);
+    errdefer buf.deinit();
+    var w = buf.writer();
+    try w.print("[\n", .{});
+    for (graph.nodes.items, 0..) |n, i| {
+        if (i > 0) try w.writeAll(",\n");
+        try w.print("  {{ \"track_id\": {d}, \"entity_id\": {d}, \"entity_type\": \"{s}\", \"parent\": ", .{
+            n.track_id, n.entity_id, entityTypeName(n.entity_id),
+        });
+        if (n.parent_track_id) |p| {
+            try w.print("{d}, ", .{p});
+        } else {
+            try w.writeAll("null, ");
+        }
+        try w.print("\"children\": [", .{});
+        var c: u32 = 0;
+        while (c < n.children_count) : (c += 1) {
+            if (c > 0) try w.writeAll(", ");
+            try w.print("{d}", .{n.children[c]});
+        }
+        try w.print("], \"neighbors\": [", .{});
+        var nn: u32 = 0;
+        while (nn < n.neighbors_count) : (nn += 1) {
+            if (nn > 0) try w.writeAll(", ");
+            try w.print("{d}", .{n.neighbors[nn]});
+        }
+        try w.print("] }}", .{});
+    }
+    try w.print("\n]\n", .{});
+    return buf.toOwnedSlice();
+}
+
+test "ProjectiveVision: temporal tracker maintains track_id across frames" {
+    const allocator = std.testing.allocator;
+    var fb = try VisualFrameBuffer.init(allocator, 32, 32);
+    defer fb.deinit();
+    var tracker = Tracker.init(allocator);
+    defer tracker.deinit();
+
+    // Frame 1: planet at (4,4)-(7,7), asteroid at (20,20)-(23,23)
+    fb.clear(PixelColor.init(0, 0, 0, 255));
+    var y: usize = 4;
+    while (y < 8) : (y += 1) {
+        var x: usize = 4;
+        while (x < 8) : (x += 1) {
+            fb.setPixel(x, y, PixelColor.init(80, 130, 110, 255), 5.0, 1);
+        }
+    }
+    y = 20;
+    while (y < 24) : (y += 1) {
+        var x: usize = 20;
+        while (x < 24) : (x += 1) {
+            fb.setPixel(x, y, PixelColor.init(120, 110, 95, 255), 8.0, 3);
+        }
+    }
+    var obs1 = try analyzeFrameBuffer(&fb, allocator, 1, 0.016);
+    defer obs1.deinit();
+    try tracker.update(obs1.entities, 1);
+
+    // After frame 1: should have 2 tracks (planet + asteroid), both with track_id
+    try std.testing.expect(tracker.tracks.items.len == 2);
+    var planet_track_id: u32 = 0;
+    var asteroid_track_id: u32 = 0;
+    for (obs1.entities) |e| {
+        if (e.entity_id == 1) planet_track_id = e.track_id;
+        if (e.entity_id == 3) asteroid_track_id = e.track_id;
+    }
+    try std.testing.expect(planet_track_id > 0);
+    try std.testing.expect(asteroid_track_id > 0);
+    try std.testing.expect(planet_track_id != asteroid_track_id);
+
+    // Frame 2: asteroid moves slightly to (22,22)-(25,25); planet stays
+    fb.clear(PixelColor.init(0, 0, 0, 255));
+    y = 4;
+    while (y < 8) : (y += 1) {
+        var x: usize = 4;
+        while (x < 8) : (x += 1) {
+            fb.setPixel(x, y, PixelColor.init(80, 130, 110, 255), 5.0, 1);
+        }
+    }
+    y = 22;
+    while (y < 26) : (y += 1) {
+        var x: usize = 22;
+        while (x < 26) : (x += 1) {
+            fb.setPixel(x, y, PixelColor.init(120, 110, 95, 255), 8.0, 3);
+        }
+    }
+    var obs2 = try analyzeFrameBuffer(&fb, allocator, 2, 0.032);
+    defer obs2.deinit();
+    try tracker.update(obs2.entities, 2);
+
+    // After frame 2: still 2 tracks (same planet + same asteroid, just moved)
+    try std.testing.expect(tracker.tracks.items.len == 2);
+
+    // Verify track_ids are preserved across frames
+    var planet_track_id_2: u32 = 0;
+    var asteroid_track_id_2: u32 = 0;
+    for (obs2.entities) |e| {
+        if (e.entity_id == 1) planet_track_id_2 = e.track_id;
+        if (e.entity_id == 3) asteroid_track_id_2 = e.track_id;
+    }
+    try std.testing.expectEqual(planet_track_id, planet_track_id_2);
+    try std.testing.expectEqual(asteroid_track_id, asteroid_track_id_2);
+
+    // Asteroid should have velocity since it moved (4-6, 4-6) -> (6-6, 6-6) per pixel
+    // The centroid moved from (23.5, 23.5) to (23.5, 23.5) — actually let's check
+    // asteroid centroid moved from (21.5, 21.5) to (23.5, 23.5) — delta (2, 2)
+    // Tracker uses low-pass smoothing so velocity might be ~1.4
+    var asteroid_velocity_x: f32 = 0;
+    var asteroid_velocity_y: f32 = 0;
+    for (obs2.entities) |e| {
+        if (e.entity_id == 3) {
+            asteroid_velocity_x = e.velocity_x;
+            asteroid_velocity_y = e.velocity_y;
+        }
+    }
+    // Velocity should be roughly positive (object moved right+down)
+    try std.testing.expect(asteroid_velocity_x > 0.5);
+    try std.testing.expect(asteroid_velocity_y > 0.5);
+}
+
+test "ProjectiveVision: scene graph builds parent/child/neighbor relationships" {
+    const allocator = std.testing.allocator;
+    var fb = try VisualFrameBuffer.init(allocator, 64, 64);
+    defer fb.deinit();
+    var tracker = Tracker.init(allocator);
+    defer tracker.deinit();
+
+    // Planet is a large entity (id=1) — 20x20 box from (10,10) to (29,29)
+    // Depth 5.0 (far from camera in our convention: smaller depth = closer)
+    fb.clear(PixelColor.init(0, 0, 0, 255));
+    var y: usize = 10;
+    while (y < 30) : (y += 1) {
+        var x: usize = 10;
+        while (x < 30) : (x += 1) {
+            fb.setPixel(x, y, PixelColor.init(80, 130, 110, 255), 5.0, 1);
+        }
+    }
+    // Asteroid is smaller (id=3) — 4x4 box at (16,16)-(19,19) — INSIDE planet's bbox
+    // Depth 3.0 (CLOSER than planet so it occludes planet pixels)
+    y = 16;
+    while (y < 20) : (y += 1) {
+        var x: usize = 16;
+        while (x < 20) : (x += 1) {
+            fb.setPixel(x, y, PixelColor.init(120, 110, 95, 255), 3.0, 3);
+        }
+    }
+
+    var obs = try analyzeFrameBuffer(&fb, allocator, 1, 0.016);
+    defer obs.deinit();
+    try tracker.update(obs.entities, 1);
+
+    // Build scene graph with neighbor_distance=15 pixels
+    var graph = try buildSceneGraph(allocator, tracker.tracks.items, 15.0);
+    defer graph.deinit();
+
+    // Verify: asteroid's parent should be planet (asteroid centroid inside planet bbox)
+    var asteroid_parent: ?u32 = null;
+    var planet_children_count: u32 = 0;
+    for (graph.nodes.items) |n| {
+        if (n.entity_id == 3) asteroid_parent = n.parent_track_id;
+        if (n.entity_id == 1) planet_children_count = n.children_count;
+    }
+    try std.testing.expect(asteroid_parent != null);
+    try std.testing.expect(planet_children_count >= 1);
+}
+
