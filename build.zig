@@ -350,4 +350,55 @@ pub fn build(b: *std.Build) void {
         const run_gui_demo_step = b.step("run-gui-demo", "Run P³ Engine GUI components demo");
         run_gui_demo_step.dependOn(&run_gui_demo.step);
     }
+
+    // ========================================================
+    // TARGET 5: p3-editor (Full Interactive Game Engine Studio)
+    // ========================================================
+    // zig build editor      — собрать редактор
+    // zig build run-editor  — запустить редактор
+    //
+    // Complete Unreal / Unity / O3DE LyShine Hybrid Studio:
+    //   3D Viewport, Scene Outliner, Component Inspector,
+    //   Keplerian Astronomy, Symplectic Physics, Asset Browser
+    // ========================================================
+    {
+        const editor_exe = b.addExecutable(.{
+            .name = "p3-editor",
+            .root_source_file = b.path("src/editor_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            editor_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        editor_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        editor_exe.linkLibC();
+        editor_exe.linkSystemLibrary("raylib");
+        editor_exe.linkSystemLibrary("GL");
+        editor_exe.linkSystemLibrary("m");
+        editor_exe.linkSystemLibrary("pthread");
+        editor_exe.linkSystemLibrary("dl");
+        editor_exe.linkSystemLibrary("rt");
+        editor_exe.linkSystemLibrary("X11");
+        b.installArtifact(editor_exe);
+
+        const editor_step = b.step("editor", "Build P³ Engine Full Interactive Studio Editor");
+        editor_step.dependOn(&editor_exe.step);
+
+        const run_editor = b.addRunArtifact(editor_exe);
+        const run_editor_step = b.step("run-editor", "Run P³ Engine Full Interactive Studio Editor");
+        run_editor_step.dependOn(&run_editor.step);
+    }
 }
