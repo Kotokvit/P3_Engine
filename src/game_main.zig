@@ -60,6 +60,7 @@ pub fn main() !void {
         cp_count += 1;
     }
     codepoints[cp_count] = 0x00B0; cp_count += 1;
+    codepoints[cp_count] = 0x00B3; cp_count += 1; // superscript 3 (³)
     codepoints[cp_count] = 0x03C0; cp_count += 1;
     codepoints[cp_count] = 0x03A9; cp_count += 1;
     codepoints[cp_count] = 0x221E; cp_count += 1;
@@ -67,6 +68,13 @@ pub fn main() !void {
     const font = rl.LoadFontEx("/usr/share/fonts/TTF/DejaVuSans.ttf", 22, &codepoints, @intCast(cp_count));
     rl.SetTextureFilter(font.texture, rl.TEXTURE_FILTER_BILINEAR);
     defer rl.UnloadFont(font);
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var ship_mesh = try p3.generateSpaceshipMesh(allocator, .{});
+    defer ship_mesh.deinit();
 
     // 2. Spaceship Physics State (Homogeneous 4D on S³)
     var ship_pos = HomVec4.init(0.0, 0.0, 12.0, 1.0);
@@ -108,8 +116,14 @@ pub fn main() !void {
         }
     }.draw;
 
+    var frame_count: u32 = 0;
+
     while (!rl.WindowShouldClose()) {
         const dt = rl.GetFrameTime();
+        frame_count += 1;
+        if (frame_count == 15 or rl.IsKeyPressed(rl.KEY_F12)) {
+            rl.TakeScreenshot("p3_game_screenshot.png");
+        }
         const screen_w = @as(f32, @floatFromInt(rl.GetScreenWidth()));
         const screen_h = @as(f32, @floatFromInt(rl.GetScreenHeight()));
 
@@ -224,15 +238,61 @@ pub fn main() !void {
             rl.DrawCubeWires(cpos, 0.8, 1.2, 0.8, .{ .r = 255, .g = 255, .b = 255, .a = 220 });
         }
 
-        // Spaceship (Tetrahedral Arrow Body + Jet Trail)
-        const s_pos = rl.Vector3{ .x = @floatCast(ship_pos.x), .y = @floatCast(ship_pos.y), .z = @floatCast(ship_pos.z) };
-        rl.DrawSphere(s_pos, 0.55, .{ .r = 240, .g = 240, .b = 250, .a = 255 });
-        rl.DrawCylinderWires(s_pos, 0.1, 0.6, 1.2, 6, .{ .r = 255, .g = 180, .b = 0, .a = 255 });
+        // Procedural Spaceship Render (Hull, Swept Wings, Canopy, Engines)
+        const cos_y = @cos(ship_yaw);
+        const sin_y = @sin(ship_yaw);
+        const cos_p = @cos(ship_pitch);
+        const sin_p = @sin(ship_pitch);
 
-        // Jet Engine Fire
-        if (ship_speed > 1.0) {
-            const trail_pos = rl.Vector3{ .x = @floatCast(ship_pos.x - fwd.x * 0.9), .y = @floatCast(ship_pos.y), .z = @floatCast(ship_pos.z - fwd.z * 0.9) };
-            rl.DrawSphere(trail_pos, 0.28 * (ship_speed / 15.0), .{ .r = 0, .g = 220, .b = 255, .a = 200 });
+        var mi: usize = 0;
+        while (mi + 2 < ship_mesh.indices.items.len) : (mi += 3) {
+            const v0 = ship_mesh.vertices.items[ship_mesh.indices.items[mi]];
+            const v1 = ship_mesh.vertices.items[ship_mesh.indices.items[mi + 1]];
+            const v2 = ship_mesh.vertices.items[ship_mesh.indices.items[mi + 2]];
+
+            const transformVert = struct {
+                fn apply(v: Vec3, px: f32, py: f32, pz: f32, cy: f32, sy: f32, cp: f32, sp: f32) rl.Vector3 {
+                    // Pitch around X, then Yaw around Y
+                    const y1 = v.y * cp - v.z * sp;
+                    const z1 = v.y * sp + v.z * cp;
+                    const x2 = v.x * cy + z1 * sy;
+                    const z2 = -v.x * sy + z1 * cy;
+                    return .{
+                        .x = @floatCast(px + x2),
+                        .y = @floatCast(py + y1),
+                        .z = @floatCast(pz + z2),
+                    };
+                }
+            }.apply;
+
+            const tp0 = transformVert(v0.pos, @floatCast(ship_pos.x), @floatCast(ship_pos.y), @floatCast(ship_pos.z), cos_y, sin_y, cos_p, sin_p);
+            const tp1 = transformVert(v1.pos, @floatCast(ship_pos.x), @floatCast(ship_pos.y), @floatCast(ship_pos.z), cos_y, sin_y, cos_p, sin_p);
+            const tp2 = transformVert(v2.pos, @floatCast(ship_pos.x), @floatCast(ship_pos.y), @floatCast(ship_pos.z), cos_y, sin_y, cos_p, sin_p);
+
+            const col = rl.Color{ .r = v0.color[0], .g = v0.color[1], .b = v0.color[2], .a = v0.color[3] };
+            rl.DrawTriangle3D(tp0, tp1, tp2, col);
+            rl.DrawTriangle3D(tp0, tp2, tp1, col); // Double-sided
+            // Technical Wireframe Edges
+            rl.DrawLine3D(tp0, tp1, .{ .r = 255, .g = 255, .b = 255, .a = 70 });
+            rl.DrawLine3D(tp1, tp2, .{ .r = 255, .g = 255, .b = 255, .a = 70 });
+            rl.DrawLine3D(tp2, tp0, .{ .r = 255, .g = 255, .b = 255, .a = 70 });
+        }
+
+        // Dual Ion Thruster Glow Trails
+        if (ship_speed > 0.5) {
+            const trail_len: f32 = (ship_speed / 15.0) * 1.8;
+            const r_nozzle = rl.Vector3{
+                .x = @floatCast(ship_pos.x - fwd.x * 2.2 + 0.6 * cos_y),
+                .y = @floatCast(ship_pos.y),
+                .z = @floatCast(ship_pos.z - fwd.z * 2.2 - 0.6 * sin_y),
+            };
+            const l_nozzle = rl.Vector3{
+                .x = @floatCast(ship_pos.x - fwd.x * 2.2 - 0.6 * cos_y),
+                .y = @floatCast(ship_pos.y),
+                .z = @floatCast(ship_pos.z - fwd.z * 2.2 + 0.6 * sin_y),
+            };
+            rl.DrawSphere(r_nozzle, 0.22 * trail_len, .{ .r = 0, .g = 240, .b = 255, .a = 220 });
+            rl.DrawSphere(l_nozzle, 0.22 * trail_len, .{ .r = 0, .g = 240, .b = 255, .a = 220 });
         }
 
         rl.EndMode3D();

@@ -93,6 +93,7 @@ pub fn main() !void {
     }
     // Mathematical & Box symbols
     codepoints[cp_count] = 0x00B0; cp_count += 1; // degree
+    codepoints[cp_count] = 0x00B3; cp_count += 1; // superscript 3 (³)
     codepoints[cp_count] = 0x03C0; cp_count += 1; // pi
     codepoints[cp_count] = 0x03A9; cp_count += 1; // Omega
     codepoints[cp_count] = 0x03B8; cp_count += 1; // theta

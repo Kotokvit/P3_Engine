@@ -84,6 +84,7 @@ pub fn build(b: *std.Build) void {
         .{ "polyroot",       "src/p3_polyroot.zig" },
         .{ "quasirandom",    "src/p3_quasirandom.zig" },
         .{ "archetype",      "src/p3_archetype.zig" },
+        .{ "procedural_mesh","src/p3_procedural_mesh.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
@@ -440,10 +441,11 @@ pub fn build(b: *std.Build) void {
         game_exe.linkSystemLibrary("dl");
         game_exe.linkSystemLibrary("rt");
         game_exe.linkSystemLibrary("X11");
-        b.installArtifact(game_exe);
+        const install_game = b.addInstallArtifact(game_exe, .{});
+        b.getInstallStep().dependOn(&install_game.step);
 
         const game_step = b.step("game", "Build P³ Void Voyager Game");
-        game_step.dependOn(&game_exe.step);
+        game_step.dependOn(&install_game.step);
 
         const run_game = b.addRunArtifact(game_exe);
         const run_game_step = b.step("run-game", "Run P³ Void Voyager Game");
