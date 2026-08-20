@@ -145,8 +145,6 @@ const Button = struct {
 
     pub fn draw(self: *const Button, font: rl.Font) void {
         const t: f32 = @floatCast(self.spring.value);
-        const w = self.rect.width;
-        const h = self.rect.height;
 
         // FIX: явное приведение через @as(f32, ...)
         const bg_r: u8 = @intFromFloat(@as(f32, @floatFromInt(C_BG_CARD.r)) + (@as(f32, @floatFromInt(C_BG_CARD_HOVER.r)) - @as(f32, @floatFromInt(C_BG_CARD.r))) * t);
@@ -337,7 +335,7 @@ fn drawProjectiveBackground(time: f32, w: f32, h: f32) void {
     var j: usize = 0;
     while (j < 40) : (j += 1) {
         const px = rand2.float(f32) * w;
-        const py = (rand2.float(f32) * h + time * (10 + rand2.float(f32) * 20)) % h;
+        const py = @rem(rand2.float(f32) * h + time * (10 + rand2.float(f32) * 20), h);
         const sz = 1.0 + rand2.float(f32) * 2.0;
         const br: u8 = @intFromFloat(60 + rand2.float(f32) * 120);
         rl.DrawCircle(@intFromFloat(px), @intFromFloat(py), sz, .{ .r = 0, .g = br, .b = br * 4 / 3, .a = 180 });
@@ -345,8 +343,6 @@ fn drawProjectiveBackground(time: f32, w: f32, h: f32) void {
 }
 
 fn drawSidePanel(font: rl.Font, w: f32, h: f32, screen: Screen, time: f32) void {
-    _ = time;
-    _ = w;
     const panel_w: f32 = 260;
     rl.DrawRectangle(0, 0, @intFromFloat(panel_w), @intFromFloat(h), C_BG_PANEL);
     rl.DrawLine(@intFromFloat(panel_w), 0, @intFromFloat(panel_w), @intFromFloat(h), C_BORDER);
@@ -396,7 +392,6 @@ fn drawSidePanel(font: rl.Font, w: f32, h: f32, screen: Screen, time: f32) void 
 // =============================================================================
 
 fn drawMainMenu(font: rl.Font, w: f32, h: f32, buttons: *[6]Button) void {
-    _ = h;
     const panel_x: f32 = 300;
     const content_w = w - panel_x;
     const cx = panel_x + content_w / 2;
