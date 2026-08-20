@@ -87,6 +87,7 @@ pub fn build(b: *std.Build) void {
         .{ "procedural_mesh","src/p3_procedural_mesh.zig" },
         .{ "vision",         "src/p3_vision.zig" },
         .{ "obj_loader",     "src/p3_obj_loader.zig" },
+        .{ "vehicle_physics","src/p3_vehicle_physics.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
