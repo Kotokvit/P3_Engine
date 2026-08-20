@@ -86,6 +86,7 @@ pub fn build(b: *std.Build) void {
         .{ "archetype",      "src/p3_archetype.zig" },
         .{ "procedural_mesh","src/p3_procedural_mesh.zig" },
         .{ "vision",         "src/p3_vision.zig" },
+        .{ "obj_loader",     "src/p3_obj_loader.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
@@ -621,5 +622,85 @@ pub fn build(b: *std.Build) void {
         const run_race = b.addRunArtifact(race_exe);
         const run_race_step = b.step("run-race", "Run P³ Neon Vector Grand Prix Game");
         run_race_step.dependOn(&run_race.step);
+    }
+
+    // ========================================================
+    // TARGET 10: p3-race-bench (HEADLESS race benchmark, no raylib)
+    //   Same trefoil-knot circuit as race_main.zig but rendered
+    //   through our VisualFrameBuffer (CPU rasterizer + CV analyzer).
+    //   No GPU/X11/raylib — pure headless, for LLM agent loop.
+    // ========================================================
+    {
+        const bench_exe = b.addExecutable(.{
+            .name = "p3-race-bench",
+            .root_source_file = b.path("src/p3_race_bench.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            bench_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        bench_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        const install_bench = b.addInstallArtifact(bench_exe, .{});
+        b.getInstallStep().dependOn(&install_bench.step);
+
+        const bench_step = b.step("race-bench", "Build P3 Headless Race Benchmark (no GPU)");
+        bench_step.dependOn(&install_bench.step);
+
+        const run_bench = b.addRunArtifact(bench_exe);
+        const run_bench_step = b.step("run-race-bench", "Run P3 Headless Race Benchmark");
+        run_bench_step.dependOn(&run_bench.step);
+    }
+
+    // ========================================================
+    // TARGET 11: p3-obj-demo (load .obj file, render it headless)
+    //   Demonstrates Blender integration: parse .obj, rasterize to
+    //   VisualFrameBuffer. Works with any Wavefront OBJ exported
+    //   from Blender, Maya, 3ds Max, etc.
+    // ========================================================
+    {
+        const obj_exe = b.addExecutable(.{
+            .name = "p3-obj-demo",
+            .root_source_file = b.path("src/p3_obj_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            obj_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        obj_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        const install_obj = b.addInstallArtifact(obj_exe, .{});
+        b.getInstallStep().dependOn(&install_obj.step);
+
+        const obj_step = b.step("obj-demo", "Build P3 OBJ Loader Demo (Blender integration)");
+        obj_step.dependOn(&install_obj.step);
+
+        const run_obj = b.addRunArtifact(obj_exe);
+        const run_obj_step = b.step("run-obj-demo", "Run P3 OBJ Loader Demo");
+        run_obj_step.dependOn(&run_obj.step);
     }
 }
