@@ -376,60 +376,20 @@ pub const LauncherState = struct {
 // ---------------------------------------------------------------------------
 // C ABI — для связи с C++ компонентами если нужно
 // ---------------------------------------------------------------------------
-const c = @cImport({
-    @cInclude("stdint.h");
-});
 
 pub const P3LauncherHandle = ?*LauncherState;
 
-export fn p3_launcher_init() P3LauncherHandle {
-    const allocator = std.heap.c_allocator;
+pub fn p3LauncherInit(allocator: std.mem.Allocator) ?*LauncherState {
     const state = allocator.create(LauncherState) catch return null;
     state.* = LauncherState.init(allocator);
     return state;
 }
 
-export fn p3_launcher_deinit(handle: P3LauncherHandle) void {
+pub fn p3LauncherDeinit(handle: P3LauncherHandle, allocator: std.mem.Allocator) void {
     if (handle) |state| {
         state.deinit();
-        state.allocator.destroy(state);
+        allocator.destroy(state);
     }
-}
-
-export fn p3_launcher_get_screen(handle: P3LauncherHandle) u8 {
-    if (handle) |state| return @intFromEnum(state.current_screen);
-    return 0;
-}
-
-export fn p3_launcher_set_screen(handle: P3LauncherHandle, screen: u8) void {
-    if (handle) |state| {
-        state.previous_screen = state.current_screen;
-        state.current_screen = @enumFromInt(screen);
-    }
-}
-
-export fn p3_launcher_create_project(handle: P3LauncherHandle, name: [*:0]const u8, template: [*:0]const u8) bool {
-    if (handle) |state| {
-        const name_slice = std.mem.sliceTo(name, 0);
-        const template_slice = std.mem.sliceTo(template, 0);
-        state.createProject(name_slice, template_slice) catch return false;
-        return true;
-    }
-    return false;
-}
-
-export fn p3_launcher_get_project_count(handle: P3LauncherHandle) u32 {
-    if (handle) |state| return @intCast(state.projects.items.len);
-    return 0;
-}
-
-export fn p3_launcher_get_project_name(handle: P3LauncherHandle, index: u32) [*:0]const u8 {
-    if (handle) |state| {
-        if (index < state.projects.items.len) {
-            return state.projects.items[index].name.ptr;
-        }
-    }
-    return "";
 }
 
 // ===========================================================================
@@ -496,22 +456,29 @@ test "Launcher: asset type names (Russian)" {
     try std.testing.expectEqualStrings("Карта", AssetType.map.name());
 }
 
-test "Launcher: C ABI init/deinit" {
-    const handle = p3_launcher_init();
+test "Launcher: Zig API init/deinit" {
+    const allocator = std.testing.allocator;
+    const handle = p3LauncherInit(allocator);
     try std.testing.expect(handle != null);
-    defer p3_launcher_deinit(handle);
-    const screen = p3_launcher_get_screen(handle);
-    try std.testing.expectEqual(@as(u8, 1), screen); // .empty = 1
-    p3_launcher_set_screen(handle, 2); // .projects = 2
-    try std.testing.expectEqual(@as(u8, 2), p3_launcher_get_screen(handle));
+    defer p3LauncherDeinit(handle, allocator);
+    try std.testing.expectEqual(LauncherScreen.empty, handle.?.current_screen);
 }
 
-test "Launcher: C ABI create project" {
-    const handle = p3_launcher_init();
-    defer p3_launcher_deinit(handle);
-    const ok = p3_launcher_create_project(handle, "Тест", "Default");
-    try std.testing.expect(ok);
-    try std.testing.expectEqual(@as(u32, 1), p3_launcher_get_project_count(handle));
+test "Launcher: Zig API screen switch" {
+    const allocator = std.testing.allocator;
+    const handle = p3LauncherInit(allocator);
+    defer p3LauncherDeinit(handle, allocator);
+    handle.?.previous_screen = handle.?.current_screen;
+    handle.?.current_screen = .projects;
+    try std.testing.expectEqual(LauncherScreen.projects, handle.?.current_screen);
+}
+
+test "Launcher: Zig API create project" {
+    const allocator = std.testing.allocator;
+    const handle = p3LauncherInit(allocator);
+    defer p3LauncherDeinit(handle, allocator);
+    try handle.?.createProject("Тест", "Default");
+    try std.testing.expectEqual(@as(usize, 1), handle.?.projects.items.len);
 }
 
 test "Launcher: scene settings defaults" {
