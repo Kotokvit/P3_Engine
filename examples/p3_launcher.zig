@@ -145,6 +145,7 @@ const Button = struct {
 
     pub fn draw(self: *const Button, font: rl.Font) void {
         const t: f32 = @floatCast(self.spring.value);
+        const h = self.rect.height;
 
         // FIX: явное приведение через @as(f32, ...)
         const bg_r: u8 = @intFromFloat(@as(f32, @floatFromInt(C_BG_CARD.r)) + (@as(f32, @floatFromInt(C_BG_CARD_HOVER.r)) - @as(f32, @floatFromInt(C_BG_CARD.r))) * t);
@@ -343,6 +344,7 @@ fn drawProjectiveBackground(time: f32, w: f32, h: f32) void {
 }
 
 fn drawSidePanel(font: rl.Font, w: f32, h: f32, screen: Screen, time: f32) void {
+    _ = w;
     const panel_w: f32 = 260;
     rl.DrawRectangle(0, 0, @intFromFloat(panel_w), @intFromFloat(h), C_BG_PANEL);
     rl.DrawLine(@intFromFloat(panel_w), 0, @intFromFloat(panel_w), @intFromFloat(h), C_BORDER);
