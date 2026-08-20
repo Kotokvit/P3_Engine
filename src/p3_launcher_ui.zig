@@ -225,8 +225,8 @@ pub const ProjectCard = struct {
     rect: Rect = .{},
     name: []const u8 = "",
     path: []const u8 = "",
-    template: []const u8 = "Default";
-    accent: PixelColor = C_ACCENT;
+    template: []const u8 = "Default",
+    accent: PixelColor = C_ACCENT,
     hover: bool = false,
     build_progress: f32 = 0, // 0..1, 0 = не собирается
     has_preview: bool = false,
