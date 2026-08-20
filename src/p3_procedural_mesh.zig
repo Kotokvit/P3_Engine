@@ -382,6 +382,107 @@ pub fn generateHoverTankMesh(allocator: std.mem.Allocator, cfg: TankConfig) !Pro
     return mesh;
 }
 
+pub const BolideConfig = struct {
+    width: f32 = 2.0,
+    length: f32 = 4.4,
+    height: f32 = 0.75,
+    body_color: [4]u8 = .{ 20, 24, 32, 255 }, // Carbon Black
+    accent_color: [4]u8 = .{ 255, 0, 110, 255 }, // Neon Magenta / Cyber Pink
+    neon_glow: [4]u8 = .{ 0, 240, 255, 255 }, // Cyber Cyan
+    cockpit_color: [4]u8 = .{ 40, 60, 90, 220 }, // Tinted Aero Canopy
+};
+
+/// Parametric procedural generator for Cyberpunk Hover-Racer Bolide
+pub fn generateCyberBolideMesh(allocator: std.mem.Allocator, cfg: BolideConfig) !ProceduralMesh {
+    var mesh = ProceduralMesh.init(allocator);
+    errdefer mesh.deinit();
+
+    const w = cfg.width;
+    const l = cfg.length;
+    const h = cfg.height;
+    const col = cfg.body_color;
+    const acc = cfg.accent_color;
+    const glow = cfg.neon_glow;
+    const ccol = cfg.cockpit_color;
+
+    // 1. Aerodynamic Front Splitter
+    const sp_tip = Vec3.init(0.0, 0.05, l * 0.55);
+    const sp_l = Vec3.init(-w * 0.48, 0.05, l * 0.42);
+    const sp_r = Vec3.init(w * 0.48, 0.05, l * 0.42);
+    try mesh.addTriangle(
+        .{ .pos = sp_tip, .normal = Vec3.init(0, 1, 0), .uv = .{ 0.5, 1 }, .color = acc },
+        .{ .pos = sp_r, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0 }, .color = acc },
+        .{ .pos = sp_l, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0 }, .color = acc },
+    );
+
+    // 2. Low-Profile Hood and Main Monocoque
+    const h_fwd_l = Vec3.init(-w * 0.4, h * 0.4, l * 0.35);
+    const h_fwd_r = Vec3.init(w * 0.4, h * 0.4, l * 0.35);
+    const h_mid_l = Vec3.init(-w * 0.5, h * 0.6, 0.0);
+    const h_mid_r = Vec3.init(w * 0.5, h * 0.6, 0.0);
+
+    try mesh.addQuad(
+        .{ .pos = h_fwd_l, .normal = Vec3.init(0, 1, 0.3), .uv = .{ 0, 1 }, .color = col },
+        .{ .pos = h_fwd_r, .normal = Vec3.init(0, 1, 0.3), .uv = .{ 1, 1 }, .color = col },
+        .{ .pos = h_mid_r, .normal = Vec3.init(0, 1, 0), .uv = .{ 1, 0.5 }, .color = col },
+        .{ .pos = h_mid_l, .normal = Vec3.init(0, 1, 0), .uv = .{ 0, 0.5 }, .color = col },
+    );
+
+    // 3. Cockpit Canopy (Tinted Glass)
+    const c_front = Vec3.init(0.0, h * 0.95, l * 0.15);
+    const c_l = Vec3.init(-w * 0.22, h * 0.65, -l * 0.05);
+    const c_r = Vec3.init(w * 0.22, h * 0.65, -l * 0.05);
+    const c_rear = Vec3.init(0.0, h * 0.75, -l * 0.3);
+
+    try mesh.addTriangle(
+        .{ .pos = c_front, .normal = Vec3.init(0, 1, 1), .uv = .{ 0.5, 1 }, .color = ccol },
+        .{ .pos = c_r, .normal = Vec3.init(1, 1, 0), .uv = .{ 1, 0 }, .color = ccol },
+        .{ .pos = c_l, .normal = Vec3.init(-1, 1, 0), .uv = .{ 0, 0 }, .color = ccol },
+    );
+    try mesh.addTriangle(
+        .{ .pos = c_front, .normal = Vec3.init(0, 1, -1), .uv = .{ 0.5, 1 }, .color = ccol },
+        .{ .pos = c_l, .normal = Vec3.init(-1, 1, 0), .uv = .{ 0, 0 }, .color = ccol },
+        .{ .pos = c_rear, .normal = Vec3.init(0, 1, -1), .uv = .{ 0.5, 0 }, .color = ccol },
+    );
+    try mesh.addTriangle(
+        .{ .pos = c_front, .normal = Vec3.init(0, 1, -1), .uv = .{ 0.5, 1 }, .color = ccol },
+        .{ .pos = c_rear, .normal = Vec3.init(0, 1, -1), .uv = .{ 0.5, 0 }, .color = ccol },
+        .{ .pos = c_r, .normal = Vec3.init(1, 1, 0), .uv = .{ 1, 0 }, .color = ccol },
+    );
+
+    // 4. Rear Dual Aerodynamic Wing & Side Fins
+    const w_l = Vec3.init(-w * 0.55, h * 1.0, -l * 0.45);
+    const w_r = Vec3.init(w * 0.55, h * 1.0, -l * 0.45);
+    const w_mid_l = Vec3.init(-w * 0.25, h * 0.9, -l * 0.52);
+    const w_mid_r = Vec3.init(w * 0.25, h * 0.9, -l * 0.52);
+
+    try mesh.addQuad(
+        .{ .pos = w_l, .normal = Vec3.init(0, 1, -0.2), .uv = .{ 0, 1 }, .color = acc },
+        .{ .pos = w_r, .normal = Vec3.init(0, 1, -0.2), .uv = .{ 1, 1 }, .color = acc },
+        .{ .pos = w_mid_r, .normal = Vec3.init(0, 1, -0.2), .uv = .{ 0.8, 0 }, .color = acc },
+        .{ .pos = w_mid_l, .normal = Vec3.init(0, 1, -0.2), .uv = .{ 0.2, 0 }, .color = acc },
+    );
+
+    // 5. 4 Magnetic Hover-Wheels with Neon Rings
+    const wheel_positions = [_]Vec3{
+        Vec3.init(-w * 0.52, 0.15, l * 0.28),
+        Vec3.init(w * 0.52, 0.15, l * 0.28),
+        Vec3.init(-w * 0.52, 0.15, -l * 0.32),
+        Vec3.init(w * 0.52, 0.15, -l * 0.32),
+    };
+    const wr: f32 = 0.28;
+
+    for (wheel_positions) |wp| {
+        try mesh.addTriangle(
+            .{ .pos = wp, .normal = Vec3.init(0, 0, 1), .uv = .{ 0.5, 0.5 }, .color = glow },
+            .{ .pos = Vec3.init(wp.x, wp.y + wr, wp.z), .normal = Vec3.init(0, 0, 1), .uv = .{ 0.5, 1 }, .color = glow },
+            .{ .pos = Vec3.init(wp.x + 0.1, wp.y, wp.z + wr), .normal = Vec3.init(0, 0, 1), .uv = .{ 1, 0.5 }, .color = glow },
+        );
+    }
+
+    return mesh;
+}
+
 // =============================================================================
 // TESTS
 // =============================================================================

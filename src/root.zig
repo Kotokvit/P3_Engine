@@ -69,7 +69,9 @@ pub const p3 = struct {
 
 pub const generateSpaceshipMesh = @import("p3_procedural_mesh.zig").generateSpaceshipMesh;
 pub const generateHoverTankMesh = @import("p3_procedural_mesh.zig").generateHoverTankMesh;
+pub const generateCyberBolideMesh = @import("p3_procedural_mesh.zig").generateCyberBolideMesh;
 pub const TankConfig = @import("p3_procedural_mesh.zig").TankConfig;
+pub const BolideConfig = @import("p3_procedural_mesh.zig").BolideConfig;
 pub const ProceduralMesh = @import("p3_procedural_mesh.zig").ProceduralMesh;
 pub const ShipHullConfig = @import("p3_procedural_mesh.zig").ShipHullConfig;
 pub const VisualFrameBuffer = @import("p3_vision.zig").VisualFrameBuffer;

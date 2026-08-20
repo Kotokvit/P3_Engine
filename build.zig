@@ -577,4 +577,49 @@ pub fn build(b: *std.Build) void {
         const run_loop_step = b.step("run-closed-loop", "Run P3 LLM Vision Closed-Loop Demo");
         run_loop_step.dependOn(&run_loop.step);
     }
+
+    // ========================================================
+    // TARGET 10: p3-race (P³ Neon Vector Grand Prix)
+    // ========================================================
+    {
+        const race_exe = b.addExecutable(.{
+            .name = "p3-race",
+            .root_source_file = b.path("src/race_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            race_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        race_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        race_exe.linkLibC();
+        race_exe.linkSystemLibrary("raylib");
+        race_exe.linkSystemLibrary("GL");
+        race_exe.linkSystemLibrary("m");
+        race_exe.linkSystemLibrary("pthread");
+        race_exe.linkSystemLibrary("dl");
+        race_exe.linkSystemLibrary("rt");
+        race_exe.linkSystemLibrary("X11");
+        const install_race = b.addInstallArtifact(race_exe, .{});
+        b.getInstallStep().dependOn(&install_race.step);
+
+        const race_step = b.step("race", "Build P³ Neon Vector Grand Prix Game");
+        race_step.dependOn(&install_race.step);
+
+        const run_race = b.addRunArtifact(race_exe);
+        const run_race_step = b.step("run-race", "Run P³ Neon Vector Grand Prix Game");
+        run_race_step.dependOn(&run_race.step);
+    }
 }
