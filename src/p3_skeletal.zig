@@ -226,44 +226,8 @@ pub fn dualQuaternionSkinning(
 //   where θ = angle between q_A and q_B = arccos(q_A · q_B)
 // ---------------------------------------------------------------------------
 pub fn slerp(q_a: Quaternion, q_b: Quaternion, t: f32) Quaternion {
-    // Compute dot product (cos of half-angle between quaternions)
-    var dot = q_a.w * q_b.w + q_a.x * q_b.x + q_a.y * q_b.y + q_a.z * q_b.z;
-
-    // If dot < 0, negate q_b to take shorter path
-    var qb = q_b;
-    if (dot < 0) {
-        qb.w = -qb.w;
-        qb.x = -qb.x;
-        qb.y = -qb.y;
-        qb.z = -qb.z;
-        dot = -dot;
-    }
-
-    // If quaternions are very close, use linear interpolation (avoid division by zero)
-    if (dot > 0.9995) {
-        const lerped = Quaternion{
-            .w = q_a.w * (1 - t) + qb.w * t,
-            .x = q_a.x * (1 - t) + qb.x * t,
-            .y = q_a.y * (1 - t) + qb.y * t,
-            .z = q_a.z * (1 - t) + qb.z * t,
-        };
-        return lerped.normalize();
-    }
-
-    // SLERP formula
-    const theta_0 = math.acos(dot); // angle between quaternions
-    const theta = theta_0 * t; // interpolated angle
-    const sin_theta_0 = @sin(theta_0);
-    const sin_theta = @sin(theta);
-    const s0 = @cos(theta) - dot * sin_theta / sin_theta_0;
-    const s1 = sin_theta / sin_theta_0;
-
-    return Quaternion{
-        .w = q_a.w * s0 + qb.w * s1,
-        .x = q_a.x * s0 + qb.x * s1,
-        .y = q_a.y * s0 + qb.y * s1,
-        .z = q_a.z * s0 + qb.z * s1,
-    };
+    // Delegate to p3_math.Quaternion.slerp (already tested, uses correct acos)
+    return Quaternion.slerp(q_a, q_b, t);
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +367,7 @@ pub fn solveCCD(
 
 test "Skeletal: SLERP at t=0 returns q_A" {
     const q_a = Quaternion.identity();
-    const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2);
+    const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2.0);
     const result = slerp(q_a, q_b, 0.0);
     try std.testing.expectApproxEqAbs(result.w, q_a.w, 0.001);
     try std.testing.expectApproxEqAbs(result.x, q_a.x, 0.001);
@@ -411,7 +375,7 @@ test "Skeletal: SLERP at t=0 returns q_A" {
 
 test "Skeletal: SLERP at t=1 returns q_B" {
     const q_a = Quaternion.identity();
-    const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2);
+    const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2.0);
     const result = slerp(q_a, q_b, 1.0);
     try std.testing.expectApproxEqAbs(result.w, q_b.w, 0.001);
     try std.testing.expectApproxEqAbs(result.y, q_b.y, 0.001);
@@ -419,11 +383,12 @@ test "Skeletal: SLERP at t=1 returns q_B" {
 
 test "Skeletal: SLERP at t=0.5 returns midpoint rotation" {
     const q_a = Quaternion.identity();
-    const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2);
+    const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2.0);
     const result = slerp(q_a, q_b, 0.5);
-    // Midpoint should be 45° rotation around Y
-    try std.testing.expectApproxEqAbs(result.w, @cos(math.pi / 4), 0.01);
-    try std.testing.expectApproxEqAbs(result.y, @sin(math.pi / 4), 0.01);
+    // Midpoint of 0° and 90° = 45° rotation around Y
+    // Quaternion for 45° Y: w=cos(22.5°)≈0.9239, y=sin(22.5°)≈0.3827
+    try std.testing.expectApproxEqAbs(result.w, 0.9239, 0.01);
+    try std.testing.expectApproxEqAbs(result.y, 0.3827, 0.01);
 }
 
 test "Skeletal: SLERP takes shortest path (negates q_B if needed)" {
