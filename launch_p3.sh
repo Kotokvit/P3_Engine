@@ -39,9 +39,15 @@ if [ ! -f "${GAMELAUNCHER}" ]; then
 fi
 
 # Настройка окружения
-export LD_LIBRARY_PATH="${O3DE_DIR}/bin/Linux/profile/Default:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${P3_ENGINE_DIR}/zig-out/lib:${O3DE_DIR}/bin/Linux/profile/Default:${LD_LIBRARY_PATH}"
+export LD_PRELOAD="${P3_ENGINE_DIR}/zig-out/lib/libP3_O3DE_Bridge.so:${LD_PRELOAD}"
 export AZ_GEM_PATH="${O3DE_DIR}/Gems"
 export AZ_ENGINE_PATH="${O3DE_DIR}"
+export QT_PLUGIN_PATH="${O3DE_DIR}/bin/Linux/profile/Default:${QT_PLUGIN_PATH}"
+export QT_QPA_PLATFORM_PLUGIN_PATH="${O3DE_DIR}/bin/Linux/profile/Default/platforms"
+export QT_QPA_PLATFORM="xcb"
+export XCURSOR_SIZE="24"
+export XCURSOR_THEME="Adwaita"
 
 # Выбор режима запуска
 case "${1:-menu}" in

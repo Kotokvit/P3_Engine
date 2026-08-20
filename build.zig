@@ -94,6 +94,12 @@ pub fn build(b: *std.Build) void {
         .{ "skeletal",       "src/p3_skeletal.zig" },
         .{ "launcher_core",  "src/p3_launcher_core.zig" },
         .{ "launcher_ui",    "src/p3_launcher_ui.zig" },
+        .{ "o3de_manifest",     "src/p3_o3de_manifest.zig" },
+        .{ "o3de_builder",      "src/p3_o3de_builder.zig" },
+        .{ "o3de_spawnable",    "src/p3_o3de_spawnable.zig" },
+        .{ "o3de_asset_system", "src/p3_o3de_asset_system.zig" },
+        .{ "o3de_serialize",    "src/p3_o3de_serialize.zig" },
+        .{ "o3de_viewport",     "src/p3_o3de_viewport.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
@@ -757,5 +763,25 @@ pub fn build(b: *std.Build) void {
         const run_launcher = b.addRunArtifact(launcher_exe);
         const run_launcher_step = b.step("run-launcher", "Run P3 Engine Launcher");
         run_launcher_step.dependOn(&run_launcher.step);
+    }
+
+    // ========================================================
+    // TARGET 13: libP3_O3DE_Bridge.so (Shared Library for O3DE replacement)
+    // ========================================================
+    // zig build o3de-bridge
+    // ========================================================
+    {
+        const bridge_lib = b.addSharedLibrary(.{
+            .name = "P3_O3DE_Bridge",
+            .root_source_file = b.path("src/p3_o3de_bridge_so.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        bridge_lib.linkLibC();
+        const install_bridge = b.addInstallArtifact(bridge_lib, .{});
+        b.getInstallStep().dependOn(&install_bridge.step);
+
+        const bridge_step = b.step("o3de-bridge", "Build P3 O3DE Native Bridge Shared Library (.so)");
+        bridge_step.dependOn(&install_bridge.step);
     }
 }

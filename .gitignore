@@ -1,2 +1,6 @@
 .zig-cache/
 zig-out/
+o3de_sdk_local/
+build/
+user/
+*.png
