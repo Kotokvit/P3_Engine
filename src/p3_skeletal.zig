@@ -170,7 +170,7 @@ pub fn dualQuaternionSkinning(
 ) void {
     for (vertices, 0..) |sv, i| {
         // Blend quaternions
-        var blended_rot = Quaternion.identity;
+        var blended_rot = Quaternion.identity();
         var blended_trans = Vec3.zero();
         var total_weight: f32 = 0;
         var k: usize = 0;
@@ -241,12 +241,13 @@ pub fn slerp(q_a: Quaternion, q_b: Quaternion, t: f32) Quaternion {
 
     // If quaternions are very close, use linear interpolation (avoid division by zero)
     if (dot > 0.9995) {
-        return Quaternion{
+        const lerped = Quaternion{
             .w = q_a.w * (1 - t) + qb.w * t,
             .x = q_a.x * (1 - t) + qb.x * t,
             .y = q_a.y * (1 - t) + qb.y * t,
             .z = q_a.z * (1 - t) + qb.z * t,
-        }.normalize();
+        };
+        return lerped.normalize();
     }
 
     // SLERP formula
@@ -331,7 +332,9 @@ pub fn solveFabrik(
             const d = joints[i].sub(joints[i - 1]).length();
             if (d < 0.0001) continue;
             const lambda = distances[i - 1] / d;
-            joints[i] = joints[i - 1].scale(1 + lambda).sub(joints[i].scale(lambda));
+            // new_pos = joints[i-1] + (joints[i] - joints[i-1]) * lambda
+            //         = joints[i-1] * (1 - lambda) + joints[i] * lambda
+            joints[i] = joints[i - 1].scale(1 - lambda).add(joints[i].scale(lambda));
         }
 
         // Check convergence
@@ -399,7 +402,7 @@ pub fn solveCCD(
 // ===========================================================================
 
 test "Skeletal: SLERP at t=0 returns q_A" {
-    const q_a = Quaternion.identity;
+    const q_a = Quaternion.identity();
     const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2);
     const result = slerp(q_a, q_b, 0.0);
     try std.testing.expectApproxEqAbs(result.w, q_a.w, 0.001);
@@ -407,7 +410,7 @@ test "Skeletal: SLERP at t=0 returns q_A" {
 }
 
 test "Skeletal: SLERP at t=1 returns q_B" {
-    const q_a = Quaternion.identity;
+    const q_a = Quaternion.identity();
     const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2);
     const result = slerp(q_a, q_b, 1.0);
     try std.testing.expectApproxEqAbs(result.w, q_b.w, 0.001);
@@ -415,7 +418,7 @@ test "Skeletal: SLERP at t=1 returns q_B" {
 }
 
 test "Skeletal: SLERP at t=0.5 returns midpoint rotation" {
-    const q_a = Quaternion.identity;
+    const q_a = Quaternion.identity();
     const q_b = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi / 2);
     const result = slerp(q_a, q_b, 0.5);
     // Midpoint should be 45° rotation around Y
@@ -424,7 +427,7 @@ test "Skeletal: SLERP at t=0.5 returns midpoint rotation" {
 }
 
 test "Skeletal: SLERP takes shortest path (negates q_B if needed)" {
-    const q_a = Quaternion.identity;
+    const q_a = Quaternion.identity();
     const q_b = Quaternion{ .w = -1, .x = 0, .y = 0, .z = 0 }; // equivalent to identity (q and -q same)
     const result = slerp(q_a, q_b, 0.5);
     // Should be identity (shortest path)
@@ -476,7 +479,7 @@ test "Skeletal: DQS with identity rotations returns translated positions" {
     };
 
     var out: [1]Vec3 = undefined;
-    const rotations = [_]Quaternion{Quaternion.identity};
+    const rotations = [_]Quaternion{Quaternion.identity()};
     const translations = [_]Vec3{Vec3.init(1, 2, 3)};
     dualQuaternionSkinning(&vertices, &out, &rotations, &translations);
 
@@ -496,7 +499,7 @@ test "Skeletal: DQS preserves volume under twist (no candy wrapper)" {
 
     var out: [1]Vec3 = undefined;
     // Bone 0: identity rotation, at origin
-    const rot0 = Quaternion.identity;
+    const rot0 = Quaternion.identity();
     const trans0 = Vec3.zero();
     // Bone 1: 180° rotation around Y, at (0, 1, 0)
     const rot1 = Quaternion.fromAxisAngle(Vec3.init(0, 1, 0), math.pi);
