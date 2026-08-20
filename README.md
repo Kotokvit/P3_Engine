@@ -109,7 +109,23 @@ zig build test-renderer     # только p3_renderer
 zig build test-gpu-rt       # только p3_gpu_rt
 zig build test-input        # только p3_input
 zig build test-app          # только p3_app
-# ... и т.д. для каждого из 21 модулей
+zig build test-vision       # CV analyzer + temporal tracker + scene graph
+zig build test-vehicle_physics  # Pacejka tire + suspension + transmission
+zig build test-character_physics  # capsule walking + step-up + buoyancy
+zig build test-obj_loader   # Wavefront .obj parser (Blender integration)
+zig build test-texture      # mipmap streaming + bilinear sampling
+zig build test-pbr          # Cook-Torrance BRDF + IBL LUT loading
+# ... и т.д. для каждого из 59 модулей
+```
+
+### Build targets (headless — no GPU/X11)
+
+```bash
+zig build p3            # build engine (stubs, headless)
+zig build arena-bench   # headless asteroid field arena (P3 vs Pygame benchmark)
+zig build closed-loop   # LLM vision closed-loop driver
+zig build race-bench    # headless race renderer (trefoil-knot track + cyber-bolide)
+zig build obj-demo      # Blender .obj loader + render demo
 ```
 
 ### GPU executable (после zig fetch)
@@ -122,6 +138,80 @@ zig build p3               # собрать запускаемый бинарн�
 ```
 
 ---
+
+## Python/Zig integration (math verification)
+
+Движок использует **Zig для core-engine кода**, а **Python — для верификации математики** через символные/численные инструменты (SymPy, NumPy, SciPy, Z3, matplotlib, Mitsuba, MuJoCo, Clifford).
+
+### Структура `calculations/`
+
+```
+calculations/
+├── README.md                    ← детальный гайд по всем 8 модулям
+├── calc_character_physics.py    ← capsule-vs-triangle, step-up, buoyancy
+├── calc_pbr_materials.py         ← GGX, Smith, Fresnel, BRDF LUT precompute
+├── calc_skeletal_animation.py   ← LBS vs DQS, FABRIK convergence
+├── calc_particle_system.py      ← Bezier, curl noise, integration
+├── calc_texture_streaming.py    ← mipmap λ, anisotropic, compression
+├── calc_lumen_gi.py             ← SH L2 9 coeffs, SDF, ClampedCos
+├── calc_nanite.py               ← screen-space error, QEM, cluster DAG
+├── calc_network_replication.py  ← fixed-point, delta compression, GGPO
+├── verify_pacejka_multi_tool.py ← SymPy+NumPy+matplotlib check of vehicle physics
+├── z3_verify_pacejka.py         ← Z3 SMT for linear invariants
+├── verify_cgal_mujoco_character.py  ← MuJoCo ground truth for character capsule
+├── verify_pga_clifford.py       ← Clifford PGA (our P³ math equivalent)
+└── <module_name>/               ← output dir per script: formulas.txt, results.json, PNGs
+```
+
+### Как связаны Zig и Python тесты?
+
+**Связь:** Python скрипты в `calculations/` верифицируют математические формулы, которые потом **реализуются в Zig-модулях**. Если SymPy нашёл что-то в формуле Pacejka, это повлияет на `src/p3_vehicle_physics.zig`.
+
+| Python verification | Zig implementation |
+|---|---|
+| `verify_pacejka_multi_tool.py` | `src/p3_vehicle_physics.zig` |
+| `calc_character_physics.py` (capsule, buoyancy) | `src/p3_character_physics.zig` |
+| `calc_pbr_materials.py` (GGX, Fresnel) | `src/p3_pbr.zig` |
+| `calc_skeletal_animation.py` (FABRIK) | `src/p3_dual_quat.zig` (existing) |
+| `calc_texture_streaming.py` (mipmap λ) | `src/p3_texture.zig` |
+| `calc_lumen_gi.py` (SH L2) | (TODO: `src/p3_gi.zig`) |
+| `calc_nanite.py` (QEM) | (TODO: `src/p3_nanite.zig`) |
+| `calc_network_replication.py` (GGPO) | (TODO: `src/p3_network.zig`) |
+
+### Запуск верификаций локально
+
+```bash
+# Установить Python dependencies (CachyOS/Arch Linux):
+sudo pacman -S --needed python-numpy python-scipy python-sympy python-matplotlib z3
+
+# Или через pip:
+pip install sympy numpy scipy matplotlib z3-solver
+
+# Запустить все верификации:
+python3 calculations/verify_pacejka_multi_tool.py    # multi-tool check
+python3 calculations/calc_character_physics.py
+python3 calculations/calc_pbr_materials.py            # генерирует brdf_lut.bin (32 KB)
+python3 calculations/calc_skeletal_animation.py
+python3 calculations/calc_particle_system.py
+python3 calculations/calc_texture_streaming.py
+python3 calculations/calc_lumen_gi.py
+python3 calculations/calc_nanite.py
+python3 calculations/calc_network_replication.py
+```
+
+### CI/CD (automated on every push/PR)
+
+GitHub Actions workflow `.github/workflows/ci.yml`:
+- **Zig tests job**: builds headless targets, runs `zig build test` + all module-specific tests
+- **Python verification job**: installs SymPy/NumPy/SciPy/Z3, runs all 8 calculation scripts + pacejka verification, uploads PNG artifacts + BRDF LUT
+
+Локально CI можно проверить через `act`:
+```bash
+act -W  # запустить workflow как GitHub Actions
+```
+
+---
+
 
 ## Дорожная карта
 

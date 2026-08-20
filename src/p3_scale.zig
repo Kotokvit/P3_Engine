@@ -54,7 +54,7 @@ pub const PlanetScale = struct {
     /// Частота высокочастотного волнового поля (Гц)
     f_phi: f64 = 0.0,
     /// Частота геофизического резонанса среды (Гц)
-    f_chi: f64 = 7.83,
+    f_chi: f64 = 0.0, // runtime-configurable resonance freq (Hz); 0 = no resonance
     /// Золотое сечение
     golden_ratio: f64 = 1.618033988749895,
 
@@ -117,7 +117,7 @@ pub const PlanetScale = struct {
         };
     }
 
-    /// Создать с параметрами Земли (R = 6,378,100 m, g = 9.80665 m/s², f_chi = 7.83 Hz)
+    /// Создать с параметрами Земли (R = 6,378,100 m, g = 9.80665 m/s², f_chi = 0.0 Hz)
     pub fn earth() PlanetScale {
         const r: f64 = 6_378_100.0;
         return .{
@@ -127,7 +127,7 @@ pub const PlanetScale = struct {
             .gravity = 9.80665,
             .k_aniso = 1.0,
             .f_phi = 0.0,
-            .f_chi = 7.83, // Резонанс Шумана
+            .f_chi = 0.0, // runtime-configurable; game lore values go in AstroGeo modules
             .two_r = 2.0 * r,
             .circumference = 2.0 * math.pi * r,
             .half_circumference = math.pi * r,
@@ -433,7 +433,7 @@ test "Scale: earth preset and escape velocity" {
 
 test "Scale: fromMassAndDensity astrophysics" {
     // M = 2.9861e24 kg, rho = 3580 kg/m3 -> R ~ 5839.5 km, g ~ 5.844 m/s2
-    const custom = PlanetScale.fromMassAndDensity(2.9861e24, 3580.0, 18.7);
+    const custom = PlanetScale.fromMassAndDensity(2.9861e24, 3580.0, 0.0);
     try std.testing.expectApproxEqAbs(custom.radius, 5_839_530.0, 100.0);
     try std.testing.expectApproxEqAbs(custom.gravity, 5.844, 0.01);
     const v_esc = custom.escapeVelocity();

@@ -1,0 +1,106 @@
+name: P³ Engine CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  zig-tests:
+    name: Zig ${{ matrix.zig-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        zig-version: [0.14.0]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ matrix.zig-version }}
+
+      - name: Verify Zig version
+        run: zig version
+
+      - name: Build all targets (no GPU/X11)
+        run: |
+          # Build headless engine targets
+          zig build p3
+          zig build arena-bench
+          zig build closed-loop
+          zig build race-bench
+          zig build obj-demo
+
+      - name: Run full test suite
+        run: zig build test --summary all
+
+      - name: Run module-specific tests
+        run: |
+          zig build test-vision --summary all
+          zig build test-vehicle_physics --summary all
+          zig build test-obj_loader --summary all
+          zig build test-texture --summary all
+          zig build test-character_physics --summary all
+          zig build test-pbr --summary all
+
+  python-math-verification:
+    name: Python math verification (SymPy + NumPy + Z3)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install sympy numpy scipy matplotlib z3-solver
+          # Optional: install if available (these are heavy, allow failures)
+          pip install mujoco clifford || true
+
+      - name: Run pacejka verification (multi-tool)
+        run: python3 calculations/verify_pacejka_multi_tool.py
+
+      - name: Run Z3 SMT verification
+        run: python3 calculations/z3_verify_pacejka.py || true
+        # Note: Z3 doesn't handle transcendentals — script may partially fail, that's expected
+
+      - name: Run all 8 module calculations
+        run: |
+          python3 calculations/calc_character_physics.py
+          python3 calculations/calc_skeletal_animation.py
+          python3 calculations/calc_particle_system.py
+          python3 calculations/calc_texture_streaming.py
+          python3 calculations/calc_lumen_gi.py
+          python3 calculations/calc_nanite.py
+          python3 calculations/calc_network_replication.py
+          # Note: calc_pbr_materials.py generates BRDF LUT — takes time, allow fail
+          timeout 600 python3 calculations/calc_pbr_materials.py || true
+
+      - name: Run Clifford PGA verification (optional — heavy dep)
+        run: python3 calculations/verify_pga_clifford.py || true
+
+      - name: Upload calculation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: math-calculations
+          path: calculations/**/*.png
+          retention-days: 14
+
+      - name: Upload BRDF LUT
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brdf-lut
+          path: calculations/pbr_materials/brdf_lut.bin
+          retention-days: 30

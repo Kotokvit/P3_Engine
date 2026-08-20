@@ -30,8 +30,11 @@ pub const R_DEFAULT_PLANET_KM: f64 = R_EARTH_KM;
 pub const K_ANISO: f64 = 1.0;
 /// Золотой угол суб-радиальных преобразований: λ = π × 10⁻¹⁰ рад
 pub const GOLDEN_ANGLE: f64 = math.pi * 1e-10;
-/// Базовая резонансная частота по умолчанию (Гц) (резонанс Шумана Земли ~ 7.83 Гц)
-pub const RESONANCE_HZ: f64 = 7.83;
+/// Default resonance frequency (Hz). Set to 0 = no resonance.
+/// NOTE: This is a runtime-configurable parameter, NOT a physical constant.
+/// Game-specific lore values (e.g., author's fictional planet frequencies)
+/// should be passed as runtime parameters via AstroGeo modules, NOT hardcoded.
+pub const RESONANCE_HZ: f64 = 0.0;
 /// Сферический угловой сдвиг координат по умолчанию (рад)
 pub const DELTA_LAT: f64 = 0.0;
 pub const DELTA_LON: f64 = 0.0;
