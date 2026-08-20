@@ -525,8 +525,8 @@ test "Skeletal: FABRIK solves 3-bone chain to target" {
 
     try std.testing.expect(iters <= 50);
     const end_pos = joints[2];
-    const error = end_pos.sub(target).length();
-    try std.testing.expect(error < 0.05); // converged to within 5cm
+    const end_error = end_pos.sub(target).length();
+    try std.testing.expect(end_error < 0.05); // converged to within 5cm
 }
 
 test "Skeletal: FABRIK preserves bone lengths" {
