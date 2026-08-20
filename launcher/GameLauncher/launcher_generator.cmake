@@ -1,5 +1,5 @@
 #
-# Copyright (c) Contributors to the Open 3D Engine Project.
+# Copyright (c) Contributors to the P3 Engine Project.
 # For complete copyright and license terms please see the LICENSE at the root of this distribution.
 #
 # SPDX-License-Identifier: Apache-2.0 OR MIT
@@ -36,19 +36,19 @@ get_property(O3DE_PROJECTS_NAME GLOBAL PROPERTY O3DE_PROJECTS_NAME)
 # when NO project is specified, for example, when creating a pre-built version of the engine,
 # create a generic launcher that can be shipped with the engine
 
-set(launcher_generator_LY_PROJECTS ${LY_PROJECTS})
+set(launcher_generator_P3_PROJECTS ${P3_PROJECTS})
 
 # the following generates "generic" launchers when no project is specified
 # this cannot happen in script only mode, since scripts-only mode requires a prebuilt installer
 # and the prebuilt installer always operates on a project, so will generally only happen
-# when building an installer from the o3de source code, or just compiling O3DE itself with no
+# when building an installer from the p3engine source code, or just compiling P3Engine itself with no
 # project specified.
-if (NOT launcher_generator_LY_PROJECTS AND NOT LY_MONOLITHIC_GAME)
-    # do not generate a stub O3DE Launcher in monolithic mode.
-    # This stub O3DE Generic Launcher is only for script-only mode, which cannot function in monolithic
+if (NOT launcher_generator_P3_PROJECTS AND NOT P3_MONOLITHIC_GAME)
+    # do not generate a stub P3Engine Launcher in monolithic mode.
+    # This stub P3Engine Generic Launcher is only for script-only mode, which cannot function in monolithic
     # linkage mode, since it does not have a linker.
-    set(launcher_generator_LY_PROJECTS ":PROJECT_PATH_ONLY_FOR_GENERIC_LAUNCHER")
-    set(O3DE_PROJECTS_NAME "O3DE")
+    set(launcher_generator_P3_PROJECTS ":PROJECT_PATH_ONP3_FOR_GENERIC_LAUNCHER")
+    set(O3DE_PROJECTS_NAME "P3Engine")
     set(launcher_generator_BUILD_GENERIC TRUE) # used to skip the asset processing step
     
     # set a compile definition on the launchers themselves to let them know they are generic launchers
@@ -59,13 +59,13 @@ else ()
     set(launcher_generator_BUILD_GENERIC FALSE)
 endif()
 
-foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_generator_LY_PROJECTS)
+foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_generator_P3_PROJECTS)
 
     if (NOT launcher_generator_BUILD_GENERIC) # generic launcher does not build assets.
         # Computes the realpath to the project.  Only used in building assets.
-        # If the project_path is relative, it is evaluated relative to the ${LY_ROOT_FOLDER}
+        # If the project_path is relative, it is evaluated relative to the ${P3_ROOT_FOLDER}
         # Otherwise the the absolute project_path is returned with symlinks resolved
-        file(REAL_PATH ${project_path} project_real_path BASE_DIRECTORY ${LY_ROOT_FOLDER})
+        file(REAL_PATH ${project_path} project_real_path BASE_DIRECTORY ${P3_ROOT_FOLDER})
 
         ################################################################################
         # Assets
@@ -75,12 +75,12 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
                 COMMENT "Processing ${project_name} assets..."
                 USES_TERMINAL # Do not buffer output of run command
                 COMMAND "${CMAKE_COMMAND}"
-                    -DLY_LOCK_FILE="${project_real_path}/user/AssetProcessorTemp/project_assets.lock"
-                    -P ${LY_ROOT_FOLDER}/cmake/CommandExecution.cmake
+                    -DP3_LOCK_FILE="${project_real_path}/user/AssetProcessorTemp/project_assets.lock"
+                    -P ${P3_ROOT_FOLDER}/cmake/CommandExecution.cmake
                         EXEC_COMMAND $<GENEX_EVAL:$<TARGET_FILE:AZ::AssetProcessorBatch>>
                             --zeroAnalysisMode
                             --project-path="${project_real_path}"
-                            --platforms=${LY_ASSET_DEPLOY_ASSET_TYPE}
+                            --platforms=${P3_ASSET_DEPLOY_ASSET_TYPE}
             )
             set_target_properties(${project_name}.Assets
                 PROPERTIES
@@ -93,41 +93,41 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
     ################################################################################
     # Monolithic game
     ################################################################################
-    if(LY_MONOLITHIC_GAME)
+    if(P3_MONOLITHIC_GAME)
 
         # In the monolithic case, we need to register the gem modules, to do so we will generate a StaticModules.inl
         # file from StaticModules.in
-        set_property(GLOBAL APPEND PROPERTY LY_STATIC_MODULE_PROJECTS_NAME ${project_name})
-        get_property(game_gem_dependencies GLOBAL PROPERTY LY_DELAYED_DEPENDENCIES_${project_name}.GameLauncher)
+        set_property(GLOBAL APPEND PROPERTY P3_STATIC_MODULE_PROJECTS_NAME ${project_name})
+        get_property(game_gem_dependencies GLOBAL PROPERTY P3_DELAYED_DEPENDENCIES_${project_name}.GameLauncher)
 
         set(game_build_dependencies
             ${game_gem_dependencies}
-            Legacy::CrySystem
+            Legacy::P3System
         )
 
         if(PAL_TRAIT_BUILD_SERVER_SUPPORTED)
             foreach(server_launcher_type ${SERVER_LAUNCHER_TYPES})
-                get_property(server_gem_dependencies GLOBAL PROPERTY LY_DELAYED_DEPENDENCIES_${project_name}.${server_launcher_type})
+                get_property(server_gem_dependencies GLOBAL PROPERTY P3_DELAYED_DEPENDENCIES_${project_name}.${server_launcher_type})
                 list(APPEND SERVER_BUILD_DEPENDENCIES_${server_launcher_type}
                     ${server_gem_dependencies}
-                    Legacy::CrySystem
+                    Legacy::P3System
                 )
             endforeach()
         endif()
 
         if(PAL_TRAIT_BUILD_UNIFIED_SUPPORTED)
-            get_property(unified_gem_dependencies GLOBAL PROPERTY LY_DELAYED_DEPENDENCIES_${project_name}.UnifiedLauncher)
+            get_property(unified_gem_dependencies GLOBAL PROPERTY P3_DELAYED_DEPENDENCIES_${project_name}.UnifiedLauncher)
 
             set(unified_build_dependencies
                 ${unified_gem_dependencies}
-                Legacy::CrySystem
+                Legacy::P3System
             )
         endif()
 
     else()
 
         set(game_runtime_dependencies
-            Legacy::CrySystem
+            Legacy::P3System
         )
 
         # in script only mode, which can only happen when building a project
@@ -137,27 +137,27 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
         # since they are all dependencies of this fake target.
         
         if (O3DE_SCRIPT_ONLY)
-            set(game_runtime_dependencies ${game_runtime_dependencies} O3DE.GameLauncher)
+            set(game_runtime_dependencies ${game_runtime_dependencies} P3Engine.GameLauncher)
         endif()
 
         if(PAL_TRAIT_BUILD_SERVER_SUPPORTED)
             foreach(server_launcher_type ${SERVER_LAUNCHER_TYPES})
                 set(SERVER_RUNTIME_DEPENDENCIES_${server_launcher_type}
-                    Legacy::CrySystem
+                    Legacy::P3System
                 )
                 if (O3DE_SCRIPT_ONLY)
                     set(SERVER_RUNTIME_DEPENDENCIES_${server_launcher_type} 
-                        "${SERVER_RUNTIME_DEPENDENCIES_${server_launcher_type}}" O3DE.${server_launcher_type})
+                        "${SERVER_RUNTIME_DEPENDENCIES_${server_launcher_type}}" P3Engine.${server_launcher_type})
                 endif()
             endforeach()
         endif()
 
         if(PAL_TRAIT_BUILD_UNIFIED_SUPPORTED)
             set(unified_runtime_dependencies
-                Legacy::CrySystem
+                Legacy::P3System
             )
             if (O3DE_SCRIPT_ONLY)
-                set(unified_runtime_dependencies ${unified_runtime_dependencies} O3DE.UnifiedLauncher)
+                set(unified_runtime_dependencies ${unified_runtime_dependencies} P3Engine.UnifiedLauncher)
             endif()
         endif()
 
@@ -176,11 +176,11 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
         COMPILE_DEFINITIONS
             ${LAUNCHER_TARGET_PROPERTY_TYPE}
                 # Adds the name of the project/game
-                LY_PROJECT_NAME="${project_name}"
+                P3_PROJECT_NAME="${project_name}"
                 # Adds the ${project_name}_GameLauncher target as a define so for the Settings Registry to use
                 # when loading .setreg file specializations
                 # This is needed so that only gems for the project game launcher are loaded
-                LY_CMAKE_TARGET="${project_name}_GameLauncher"
+                P3_CMAKE_TARGET="${project_name}_GameLauncher"
                 "${GENERIC_LAUNCHER_COMPILE_DEFINITION}" # this is empty if its not a generic launcher
         INCLUDE_DIRECTORIES
             ${LAUNCHER_TARGET_PROPERTY_TYPE}
@@ -198,13 +198,13 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
     set_target_properties(${project_name}.GameLauncher
         PROPERTIES
             FOLDER ${project_name}
-            LY_PROJECT_NAME ${project_name}
+            P3_PROJECT_NAME ${project_name}
     )
 
     # Turn on DPI scaling support.
     set_property(TARGET ${project_name}.GameLauncher APPEND PROPERTY VS_DPI_AWARE ${O3DE_DPI_AWARENESS})
 
-    if(LY_DEFAULT_PROJECT_PATH)
+    if(P3_DEFAULT_PROJECT_PATH)
         if (TARGET ${project_name})
             get_target_property(project_game_launcher_additional_args ${project_name} GAMELAUNCHER_ADDITIONAL_VS_DEBUGGER_COMMAND_ARGUMENTS)
             if (project_game_launcher_additional_args)
@@ -214,7 +214,7 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
         endif()
 
         set_property(TARGET ${project_name}.GameLauncher APPEND PROPERTY VS_DEBUGGER_COMMAND_ARGUMENTS
-            "--project-path=\"${LY_DEFAULT_PROJECT_PATH}\" ${additional_game_vs_debugger_args}")
+            "--project-path=\"${P3_DEFAULT_PROJECT_PATH}\" ${additional_game_vs_debugger_args}")
     endif()
 
     # Associate the Clients Gem Variant with each projects GameLauncher
@@ -237,11 +237,11 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
                 COMPILE_DEFINITIONS
                     ${LAUNCHER_TARGET_PROPERTY_TYPE}
                         # Adds the name of the project/game
-                        LY_PROJECT_NAME="${project_name}"
+                        P3_PROJECT_NAME="${project_name}"
                         # Adds the ${project_name}_${server_launcher_type} target as a define so for the Settings Registry to use
                         # when loading .setreg file specializations
                         # This is needed so that only gems for the project server launcher are loaded
-                        LY_CMAKE_TARGET="${project_name}_${server_launcher_type}"
+                        P3_CMAKE_TARGET="${project_name}_${server_launcher_type}"
                         "${GENERIC_LAUNCHER_COMPILE_DEFINITION}" # this is empty if its not a generic launcher
 
                 INCLUDE_DIRECTORIES
@@ -258,13 +258,13 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
             set_target_properties(${project_name}.${server_launcher_type}
                 PROPERTIES
                     FOLDER ${project_name}
-                    LY_PROJECT_NAME ${project_name}
+                    P3_PROJECT_NAME ${project_name}
             )
 
             # Turn on DPI scaling support.
             set_property(TARGET ${project_name}.${server_launcher_type} APPEND PROPERTY VS_DPI_AWARE ${O3DE_DPI_AWARENESS})
 
-            if(LY_DEFAULT_PROJECT_PATH)
+            if(P3_DEFAULT_PROJECT_PATH)
                 if (TARGET ${project_name})
                     get_target_property(project_server_launcher_additional_args ${project_name} SERVERLAUNCHER_ADDITIONAL_VS_DEBUGGER_COMMAND_ARGUMENTS)
                     if (project_server_launcher_additional_args)
@@ -274,7 +274,7 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
                 endif()
 
                 set_property(TARGET ${project_name}.${server_launcher_type} APPEND PROPERTY VS_DEBUGGER_COMMAND_ARGUMENTS
-                    "--project-path=\"${LY_DEFAULT_PROJECT_PATH}\" ${additional_server_vs_debugger_args}")
+                    "--project-path=\"${P3_DEFAULT_PROJECT_PATH}\" ${additional_server_vs_debugger_args}")
             endif()
 
             # Associate the Servers Gem Variant with each projects ServerLauncher
@@ -302,11 +302,11 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
             COMPILE_DEFINITIONS
                 ${LAUNCHER_TARGET_PROPERTY_TYPE}
                     # Adds the name of the project/game
-                    LY_PROJECT_NAME="${project_name}"
+                    P3_PROJECT_NAME="${project_name}"
                     # Adds the ${project_name}_UnifiedLauncher target as a define so for the Settings Registry to use
                     # when loading .setreg file specializations
                     # This is needed so that only gems for the project unified launcher are loaded
-                    LY_CMAKE_TARGET="${project_name}_UnifiedLauncher"
+                    P3_CMAKE_TARGET="${project_name}_UnifiedLauncher"
                     "${GENERIC_LAUNCHER_COMPILE_DEFINITION}" # this is empty if its not a generic launcher
             INCLUDE_DIRECTORIES
                 ${LAUNCHER_TARGET_PROPERTY_TYPE}
@@ -324,13 +324,13 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
         set_target_properties(${project_name}.UnifiedLauncher
             PROPERTIES
                 FOLDER ${project_name}
-                LY_PROJECT_NAME ${project_name}
+                P3_PROJECT_NAME ${project_name}
         )
 
         # Turn on DPI scaling support.
         set_property(TARGET ${project_name}.UnifiedLauncher APPEND PROPERTY VS_DPI_AWARE ${O3DE_DPI_AWARENESS})
 
-        if(LY_DEFAULT_PROJECT_PATH)
+        if(P3_DEFAULT_PROJECT_PATH)
             if (TARGET ${project_name})
                 get_target_property(project_unified_launcher_additional_args ${project_name} UNIFIEDLAUNCHER_ADDITIONAL_VS_DEBUGGER_COMMAND_ARGUMENTS)
                 if (project_unified_launcher_additional_args)
@@ -340,7 +340,7 @@ foreach(project_name project_path IN ZIP_LISTS O3DE_PROJECTS_NAME launcher_gener
             endif()
 
             set_property(TARGET ${project_name}.UnifiedLauncher APPEND PROPERTY VS_DEBUGGER_COMMAND_ARGUMENTS
-                "--project-path=\"${LY_DEFAULT_PROJECT_PATH}\" ${additional_unified_vs_debugger_args}")
+                "--project-path=\"${P3_DEFAULT_PROJECT_PATH}\" ${additional_unified_vs_debugger_args}")
         endif()
 
         # Associate the Unified Gem Variant with each projects UnfiedLauncher
@@ -354,9 +354,9 @@ endforeach()
 function(ly_delayed_generate_static_modules_inl)
 
     get_property(SERVER_LAUNCHER_TYPES GLOBAL PROPERTY SERVER_LAUNCHER_TYPES)
-    if(LY_MONOLITHIC_GAME)
+    if(P3_MONOLITHIC_GAME)
         get_property(launcher_unified_binary_dir GLOBAL PROPERTY LAUNCHER_UNIFIED_BINARY_DIR)
-        get_property(project_names GLOBAL PROPERTY LY_STATIC_MODULE_PROJECTS_NAME)
+        get_property(project_names GLOBAL PROPERTY P3_STATIC_MODULE_PROJECTS_NAME)
         foreach(project_name ${project_names})
 
             unset(extern_module_declarations)

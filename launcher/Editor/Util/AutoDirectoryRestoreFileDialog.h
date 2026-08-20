@@ -1,0 +1,31 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QFileDialog>
+
+class CAutoDirectoryRestoreFileDialog
+    : public QFileDialog
+{
+    Q_OBJECT
+
+public:
+    explicit CAutoDirectoryRestoreFileDialog(
+        QFileDialog::AcceptMode acceptMode,
+        QFileDialog::FileMode fileMode = QFileDialog::AnyFile,
+        const QString& defaultSuffix = {},
+        const QString& directory = {},
+        const QString& filter = {},
+        QFileDialog::Options options = QFileDialog::Options(),
+        const QString& caption = {},
+        QWidget* parent = nullptr);
+    virtual ~CAutoDirectoryRestoreFileDialog() {}
+
+    int exec() override;
+};

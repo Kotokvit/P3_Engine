@@ -1,0 +1,26 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+
+#include "EditorDefs.h"
+
+#include "AutoLogTime.h"
+
+CAutoLogTime::CAutoLogTime(const char* what)
+{
+    m_what = what;
+    CLogFile::FormatLine("---- Start: %s", m_what);
+
+    m_t0 = time(0);
+}
+
+CAutoLogTime::~CAutoLogTime()
+{
+    m_t1 = time(0);
+    CLogFile::FormatLine("---- End: %s (%lld seconds)", m_what, (m_t1 - m_t0));
+}

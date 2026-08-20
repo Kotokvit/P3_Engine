@@ -1,0 +1,38 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QWidget>
+
+#include <TagWidget.h>
+
+QT_FORWARD_DECLARE_CLASS(QVBoxLayout)
+QT_FORWARD_DECLARE_CLASS(QLabel)
+
+namespace P3::ProjectManager
+{
+    // Title, description and tag widget container used for the depending and conflicting gems
+    class GemsSubWidget
+        : public QWidget
+    {
+        Q_OBJECT
+
+    public:
+        GemsSubWidget(QWidget* parent = nullptr);
+        void Update(const QString& title, const QString& text, const QVector<Tag>& tags);
+
+    signals:
+        void TagClicked(const Tag& tag);
+
+    private:
+        QLabel* m_titleLabel = nullptr;
+        QLabel* m_textLabel = nullptr;
+        TagContainerWidget* m_tagWidget = nullptr;
+    };
+} // namespace P3::ProjectManager

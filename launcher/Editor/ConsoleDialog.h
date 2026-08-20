@@ -1,0 +1,29 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include "IEditor.h"
+
+#include <QDialog>
+
+class CConsoleSCB;
+
+class CConsoleDialog
+    : public QDialog
+    , public IInitializeUIInfo
+{
+    Q_OBJECT
+public:
+    explicit CConsoleDialog(QWidget* parent = nullptr);
+    void SetInfoText(const char* text) override;
+    void closeEvent(QCloseEvent*) override;
+
+private:
+    CConsoleSCB* const m_consoleWidget;
+};

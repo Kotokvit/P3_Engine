@@ -1,0 +1,25 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QSortFilterProxyModel>
+
+namespace P3::ProjectManager
+{
+    class GemRepoProxyModel
+        : public QSortFilterProxyModel
+    {
+        Q_OBJECT
+    public:
+        explicit GemRepoProxyModel(QObject* parent = nullptr);
+
+    protected:
+        bool lessThan(const QModelIndex& left, const QModelIndex& right) const override;
+    };
+} // namespace P3::ProjectManager

@@ -1,0 +1,36 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QFrame>
+
+QT_FORWARD_DECLARE_CLASS(QLabel)
+QT_FORWARD_DECLARE_CLASS(QPushButton)
+
+namespace P3::ProjectManager
+{
+    class ScreenHeader 
+        : public QFrame 
+    {
+        Q_OBJECT
+
+    public:
+        ScreenHeader(QWidget* parent = nullptr);
+
+        void setTitle(const QString& text);
+        void setSubTitle(const QString& text);
+
+        QPushButton* backButton();
+
+    private:
+        QLabel* m_title;
+        QLabel* m_subTitle;
+        QPushButton* m_backButton;
+    };
+} // namespace P3::ProjectManager

@@ -1,12 +1,12 @@
 #
-# Copyright (c) Contributors to the Open 3D Engine Project.
+# Copyright (c) Contributors to the P3 Engine Project.
 # For complete copyright and license terms please see the LICENSE at the root of this distribution.
 #
 # SPDX-License-Identifier: Apache-2.0 OR MIT
 #
 #
 
-set(LY_LINK_OPTIONS
+set(P3_LINK_OPTIONS
     PRIVATE
         -ObjC
 )
@@ -40,14 +40,14 @@ set_target_properties(${project_name}.GameLauncher PROPERTIES
     XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME LaunchImage
 )
 
-set(layout_tool_dir ${LY_ROOT_FOLDER}/cmake/Tools)
+set(layout_tool_dir ${P3_ROOT_FOLDER}/cmake/Tools)
 
 add_custom_command(TARGET ${project_name}.GameLauncher POST_BUILD
-    COMMAND ${LY_PYTHON_CMD} layout_tool.py
+    COMMAND ${P3_PYTHON_CMD} layout_tool.py
         -p iOS
-        -a ${LY_ASSET_DEPLOY_ASSET_TYPE}
+        -a ${P3_ASSET_DEPLOY_ASSET_TYPE}
         --project-path ${project_real_path}
-        -m ${LY_ASSET_DEPLOY_MODE}
+        -m ${P3_ASSET_DEPLOY_MODE}
         --create-layout-root
         -l $<TARGET_BUNDLE_DIR:${project_name}.GameLauncher>/assets
         --build-config $<CONFIG>
@@ -55,7 +55,7 @@ add_custom_command(TARGET ${project_name}.GameLauncher POST_BUILD
         --verify
         --copy
         --override-pak-folder ${project_real_path}/AssetBundling/Bundles
-        ${LY_OVERRIDE_PAK_ARGUMENT}
+        ${P3_OVERRIDE_PAK_ARGUMENT}
     WORKING_DIRECTORY ${layout_tool_dir}
     COMMENT "Synchronizing Layout Assets ..."
     VERBATIM

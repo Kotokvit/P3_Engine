@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QDirIterator>
+
+class QFileInfo;
+class QString;
+
+class CFileEnum
+{
+public:
+    CFileEnum();
+    virtual ~CFileEnum();
+    bool GetNextFile(QFileInfo* pFile);
+    bool StartEnumeration(const QString& szEnumPathAndPattern, QFileInfo* pFile);
+    bool StartEnumeration(const QString& szEnumPath, const QString& szEnumPattern, QFileInfo* pFile);
+    static bool ScanDirectory(
+        const QString& path,
+        const QString& file,
+        QStringList& files,
+        bool bRecursive = true,
+        bool bSkipPaks = false);
+
+protected:
+    QDirIterator* m_hEnumFile;
+};

@@ -1,0 +1,26 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QDialog>
+
+namespace P3::ProjectManager
+{
+    class ExternalLinkDialog
+        : public QDialog
+    {
+        Q_OBJECT
+    public:
+        explicit ExternalLinkDialog(const QUrl& url, QWidget* parent = nullptr);
+        ~ExternalLinkDialog() = default;
+
+    private slots:
+        void SetSkipDialogSetting(bool state);
+    };
+} // namespace P3::ProjectManager

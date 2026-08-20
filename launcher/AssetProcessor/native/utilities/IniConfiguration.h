@@ -1,0 +1,36 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QDir>
+#include <QString>
+#include <QCoreApplication>
+
+/** Reads the bootstrap file for listening port
+ */
+class IniConfiguration
+    : public QObject
+{
+    Q_OBJECT
+public:
+    explicit IniConfiguration(QObject* pParent = nullptr);
+    virtual ~IniConfiguration();
+
+    // Singleton pattern:
+    static const IniConfiguration* Get();
+
+    void parseCommandLine(QStringList cmdLine = QCoreApplication::arguments());
+    void readINIConfigFile(QDir dir = qApp->applicationDirPath());
+    quint16 listeningPort() const;
+    void SetListeningPort(quint16 port);
+
+private:
+    quint16 m_listeningPort;
+    QString m_userConfigFilePath;
+};

@@ -7,7 +7,7 @@
  */
 
 // note that this is the only file pulled into a launcher target that has the
-// defines set such as LY_CMAKE_TARGET, and LY_PROJECT_NAME, other files come from a static library
+// defines set such as P3_CMAKE_TARGET, and P3_PROJECT_NAME, other files come from a static library
 // which do not provide those defines.
 // note that the tests use a mock implementation of this file, see Tests/Test.cpp
 // If you modify this file or the interface launcher.h, make sure to update the mock implementation as well.
@@ -24,19 +24,19 @@ namespace P3Launcher
     //! This function returns the build system target name
     AZStd::string_view GetBuildTargetName()
     {
-#if !defined (LY_CMAKE_TARGET)
-#error "LY_CMAKE_TARGET must be defined in order to add this source file to a CMake executable target"
+#if !defined (P3_CMAKE_TARGET)
+#error "P3_CMAKE_TARGET must be defined in order to add this source file to a CMake executable target"
 #endif
-        return { LY_CMAKE_TARGET };
+        return { P3_CMAKE_TARGET };
     }
 
 
     AZStd::string_view GetProjectName()
     {
-#if !defined (LY_PROJECT_NAME)
-#error "LY_PROJECT_NAME must be defined in order to for the Launcher to run using a Game Project"
+#if !defined (P3_PROJECT_NAME)
+#error "P3_PROJECT_NAME must be defined in order to for the Launcher to run using a Game Project"
 #endif
-        return { LY_PROJECT_NAME };
+        return { P3_PROJECT_NAME };
     }
 
     bool IsGenericLauncher()

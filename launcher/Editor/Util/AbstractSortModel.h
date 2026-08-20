@@ -1,0 +1,22 @@
+/*
+ * Copyright (c) Contributors to the P3 Engine Project.
+ * For complete copyright and license terms please see the LICENSE at the root of this distribution.
+ *
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
+ *
+ */
+
+#pragma once
+
+#include <QAbstractItemModel>
+
+class AbstractSortModel
+    : public QAbstractTableModel
+{
+    Q_OBJECT
+
+public:
+    AbstractSortModel(QObject* parent = nullptr);
+
+    virtual bool LessThan(const QModelIndex& lhs, const QModelIndex& rhs) const;
+};
