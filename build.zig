@@ -703,9 +703,57 @@ pub fn build(b: *std.Build) void {
 
         const obj_step = b.step("obj-demo", "Build P3 OBJ Loader Demo (Blender integration)");
         obj_step.dependOn(&install_obj.step);
-
         const run_obj = b.addRunArtifact(obj_exe);
         const run_obj_step = b.step("run-obj-demo", "Run P3 OBJ Loader Demo");
         run_obj_step.dependOn(&run_obj.step);
+    }
+
+    // ========================================================
+    // TARGET 12: p3-launcher (P3 Engine Launcher)
+    // ========================================================
+    // Polnostyu novyy launcher na Zig/raylib, zamenyaet O3DE binarniki.
+    // zig build launcher        
+    // zig build run-launcher   
+    // ========================================================
+    {
+        const launcher_exe = b.addExecutable(.{
+            .name = "p3-launcher",
+            .root_source_file = b.path("examples/p3_launcher.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        inline for (lib_modules) |mod| {
+            const mod_name = mod.@"0";
+            const mod_path = mod.@"1";
+            launcher_exe.root_module.addImport(
+                b.fmt("p3_{s}", .{mod_name}),
+                b.addModule(b.fmt("p3_{s}", .{mod_name}), .{
+                    .root_source_file = b.path(mod_path),
+                }),
+            );
+        }
+        launcher_exe.root_module.addImport(
+            "root.zig",
+            b.addModule("root.zig", .{
+                .root_source_file = b.path("src/root.zig"),
+            }),
+        );
+        launcher_exe.linkLibC();
+        launcher_exe.linkSystemLibrary("raylib");
+        launcher_exe.linkSystemLibrary("GL");
+        launcher_exe.linkSystemLibrary("m");
+        launcher_exe.linkSystemLibrary("pthread");
+        launcher_exe.linkSystemLibrary("dl");
+        launcher_exe.linkSystemLibrary("rt");
+        launcher_exe.linkSystemLibrary("X11");
+        const install_launcher = b.addInstallArtifact(launcher_exe, .{});
+        b.getInstallStep().dependOn(&install_launcher.step);
+
+        const launcher_step = b.step("launcher", "Build P3 Engine Launcher");
+        launcher_step.dependOn(&install_launcher.step);
+
+        const run_launcher = b.addRunArtifact(launcher_exe);
+        const run_launcher_step = b.step("run-launcher", "Run P3 Engine Launcher");
+        run_launcher_step.dependOn(&run_launcher.step);
     }
 }
