@@ -92,6 +92,7 @@ pub fn build(b: *std.Build) void {
         .{ "character_physics","src/p3_character_physics.zig" },
         .{ "pbr",            "src/p3_pbr.zig" },
         .{ "skeletal",       "src/p3_skeletal.zig" },
+        .{ "launcher_core",  "src/p3_launcher_core.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
