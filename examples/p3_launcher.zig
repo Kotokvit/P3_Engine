@@ -1,7 +1,5 @@
-// =============================================================================
-// P³ ENGINE LAUNCHER v1.0 — ZIG + RAYLIB
-// =============================================================================
-//
+// =============================================================================// P³ ENGINE LAUNCHER v1.0 — ZIG + RAYLIB
+// =============================================================================//
 // Полностью новый лаунчер для движка P³ Engine.
 // Заменяет O3DE лаунчер (4 бинарника, 11MB).
 // Написан на чистом Zig с raylib для рендеринга GUI.
@@ -33,20 +31,13 @@ const rl = @cImport({
     @cInclude("raylib.h");
 });
 
-const Vec3 = p3.Vec3;
 const HomVec4 = p3.HomVec4;
-const Vec2 = p3.Vec2;
-const Color = p3.Color;
-const Rotator = p3.Rotator;
-const Mat4x4 = p3.Mat4x4;
-const Quaternion = p3.Quaternion;
 
 // =============================================================================
 // КОНСТАНТЫ ЛАУНЧЕРА
 // =============================================================================
 
 const ENGINE_VERSION = "0.7.0";
-const ENGINE_NAME = "P³ Engine";
 const WINDOW_W = 1280;
 const WINDOW_H = 800;
 
@@ -72,42 +63,32 @@ const C_GRID_BRIGHT = rl.Color{ .r = 0, .g = 150, .b = 255, .a = 40 };
 // =============================================================================
 // СПРИН-АНИМАЦИЯ (по паттерну UE SpringMath, переписано на Zig)
 // =============================================================================
-/// Критически затухающий коэффициент для пружинной анимации UI-элементов.
-/// UE использует SmoothingTime → Damping: damping = 4.0 / max(st, ε)
-/// Мы переписали на Zig с f64 для точности проективных вычислений.
 
 const SpringState = struct {
     value: f64 = 0.0,
     target: f64 = 0.0,
     velocity: f64 = 0.0,
     smoothing_time: f64 = 0.15,
-    /// Степень затухания: 1.0 = критическая (быстро), <1 = упруго
     damping_ratio: f64 = 0.85,
 
-    /// Обновить пружинное состояние (dt в секундах)
-    /// Алгоритм: полудискретный Euler с проективной коррекцией
     pub fn update(self: *SpringState, dt: f64) void {
         if (dt <= 0 or self.smoothing_time <= 0) return;
-        // Коэффициент жёсткости пружины
         const omega = 2.0 / self.smoothing_time;
         const omega2 = omega * omega;
         const zeta = self.damping_ratio;
         const zeta_omega = zeta * omega;
 
-        // Проективная коррекция: уменьшаем колебания при близкости к цели
         const displacement = self.value - self.target;
-        const proj_factor = if (@abs(displacement) < 0.001) 0.5 else 1.0;
+        // FIX: явное f64 вместо comptime_float
+        const proj_factor: f64 = if (@abs(displacement) < 0.001) 0.5 else 1.0;
 
-        // Сила пружины (F = -kx - cv)
         const spring_force = -omega2 * displacement * proj_factor;
         const damp_force = -2.0 * zeta_omega * self.velocity;
         const accel = spring_force + damp_force;
 
-        // Семи-дискретный Euler (порядок 2 точности)
         self.velocity += accel * dt;
         self.value += self.velocity * dt;
 
-        // Остановить микро-колебания
         if (@abs(self.velocity) < 0.001 and @abs(displacement) < 0.001) {
             self.value = self.target;
             self.velocity = 0;
@@ -149,9 +130,7 @@ const Button = struct {
     icon: []const u8,
     hovered: bool = false,
     spring: SpringState = .{},
-    /// Нажата ли кнопка в этом кадре
     clicked: bool = false,
-    /// Цвет акцента (можно перекрасить)
     accent: rl.Color = C_ACCENT,
 
     pub fn update(self: *Button, mouse_pos: rl.Vector2) void {
@@ -159,37 +138,31 @@ const Button = struct {
         self.spring.setTarget(if (self.hovered) 1.0 else 0.0);
         self.spring.update(1.0 / 60.0);
         self.clicked = false;
-        if (self.hovered and rl.IsMouseButtonDown(rl.MOUSE_LEFT_BUTTON)) {
+        if (self.hovered) {
             self.clicked = rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON);
         }
     }
 
     pub fn draw(self: *const Button, font: rl.Font) void {
-        const t = @as(f32, @floatCast(self.spring.value));
-        const base_r = self.rect.x;
-        const base_y = self.rect.y;
+        const t: f32 = @floatCast(self.spring.value);
         const w = self.rect.width;
         const h = self.rect.height;
 
-        // Анимированная подсветка
-        const bg_r = @floatCast(C_BG_CARD.r + (C_BG_CARD_HOVER.r - C_BG_CARD.r) * t);
-        const bg_g = @floatCast(C_BG_CARD.g + (C_BG_CARD_HOVER.g - C_BG_CARD.g) * t);
-        const bg_b = @floatCast(C_BG_CARD.b + (C_BG_CARD_HOVER.b - C_BG_CARD.b) * t);
-        rl.DrawRectangleRounded(self.rect, 8.0, 4, .{ .r = @intFromFloat(bg_r), .g = @intFromFloat(bg_g), .b = @intFromFloat(bg_b), .a = 255 });
+        // FIX: явное приведение через @as(f32, ...)
+        const bg_r: u8 = @intFromFloat(@as(f32, @floatFromInt(C_BG_CARD.r)) + (@as(f32, @floatFromInt(C_BG_CARD_HOVER.r)) - @as(f32, @floatFromInt(C_BG_CARD.r))) * t);
+        const bg_g: u8 = @intFromFloat(@as(f32, @floatFromInt(C_BG_CARD.g)) + (@as(f32, @floatFromInt(C_BG_CARD_HOVER.g)) - @as(f32, @floatFromInt(C_BG_CARD.g))) * t);
+        const bg_b: u8 = @intFromFloat(@as(f32, @floatFromInt(C_BG_CARD.b)) + (@as(f32, @floatFromInt(C_BG_CARD_HOVER.b)) - @as(f32, @floatFromInt(C_BG_CARD.b))) * t);
+        rl.DrawRectangleRounded(self.rect, 8.0, 4, .{ .r = bg_r, .g = bg_g, .b = bg_b, .a = 255 });
 
-        // Граница с акцентом
         if (t > 0.01) {
-            rl.DrawRectangleRoundedLines(self.rect, 8.0, 4, 1.5, .{
-                .r = @intFromFloat(@as(f32, @floatFromInt(self.accent.r)) * t),
-                .g = @intFromFloat(@as(f32, @floatFromInt(self.accent.g)) * t),
-                .b = @intFromFloat(@as(f32, @floatFromInt(self.accent.b)) * t),
-                .a = 255,
-            });
+            const ar: u8 = @intFromFloat(@as(f32, @floatFromInt(self.accent.r)) * t);
+            const ag: u8 = @intFromFloat(@as(f32, @floatFromInt(self.accent.g)) * t);
+            const ab: u8 = @intFromFloat(@as(f32, @floatFromInt(self.accent.b)) * t);
+            rl.DrawRectangleRoundedLines(self.rect, 8.0, 4, .{ .r = ar, .g = ag, .b = ab, .a = 255 });
         }
 
-        // Текст
-        const text_x = base_r + 20;
-        const text_y = base_y + (h - 20) / 2;
+        const text_x = self.rect.x + 20;
+        const text_y = self.rect.y + (h - 20) / 2;
         drawText(font, self.icon, text_x, text_y - 1, 16, self.accent);
         drawText(font, self.label, text_x + 28, text_y, 16, C_TEXT);
     }
@@ -200,21 +173,17 @@ const Button = struct {
 // =============================================================================
 
 const EngineSettings = struct {
-    // Видео
     resolution_w: c_int = WINDOW_W,
     resolution_h: c_int = WINDOW_H,
     fullscreen: bool = false,
     vsync: bool = true,
     msaa_samples: c_int = 4,
     target_fps: c_int = 60,
-    // Физика
     gravity: f32 = 9.80665,
     physics_substeps: c_int = 4,
-    // Проективная геометрия
     planet_radius_km: f64 = 6378.0,
     anisotropy: f64 = 1.0,
     show_fs_distance: bool = true,
-    // Управление
     mouse_sensitivity: f32 = 1.0,
     invert_y: bool = false,
     move_speed: f32 = 2.0,
@@ -224,20 +193,18 @@ const EngineSettings = struct {
 // ЗАГРУЗКА СЦЕНЫ
 // =============================================================================
 
+const StarField = struct { x: f32, y: f32, speed: f32, size: f32, brightness: f32 };
+
 const LoadingState = struct {
     progress: f32 = 0.0,
     phase: []const u8 = "",
-    spring: SpringState = .{ .smoothing_time = 0.4 },
-    stars: [80]StarField,
-
-    const StarField = struct { x: f32, y: f32, speed: f32, size: f32, brightness: f32 };
+    spring: SpringState = .{ .smoothing_time = 0.4, .damping_ratio = 0.9 },
+    stars: [80]StarField = undefined,
 
     pub fn init() LoadingState {
-        var state: LoadingState = undefined;
+        var state: LoadingState = .{ .stars = undefined };
         state.progress = 0.0;
         state.phase = "";
-        state.spring = .{ .smoothing_time = 0.4, .damping_ratio = 0.9 };
-        // Генерация звёздного поля
         var prng = std.Random.DefaultPrng.init(42);
         const rand = prng.random();
         for (&state.stars, 0..) |*s, i| {
@@ -252,7 +219,6 @@ const LoadingState = struct {
     }
 
     pub fn simulate(self: *LoadingState, dt: f32) void {
-        // Симуляция фаз загрузки
         const phases = [_][]const u8{
             "Инициализация проективного ядра P³...",
             "Загрузка математических модулей (S³, PGL4, Клиффорд)...",
@@ -266,21 +232,19 @@ const LoadingState = struct {
             "Инициализация скелетной анимации...",
             "Подготовка рендер-конвейера...",
             "Запуск игрового цикла...",
-                };
+        };
 
         self.progress += dt * 0.08;
         if (self.progress > 1.0) self.progress = 1.0;
         const idx = @min(@as(usize, @intFromFloat(self.progress * @as(f32, @floatFromInt(phases.len)))), phases.len - 1);
         self.phase = phases[idx];
-        self.spring.setTarget(self.progress);
+        self.spring.setTarget(@as(f64, self.progress));
         self.spring.update(@as(f64, dt));
 
-        // Обновление звёзд
         for (&self.stars) |*s| {
             s.x += s.speed * dt * 60;
             if (s.x > 1300) {
                 s.x = -10;
-                s.y = std.Random.DefaultPrng.init(@intFromFloat(s.y * 100)).random().float(f32) * 800;
             }
         }
     }
@@ -299,43 +263,44 @@ fn drawText(font: rl.Font, text: []const u8, x: f32, y: f32, size: f32, col: rl.
 }
 
 fn drawTextCentered(font: rl.Font, text: []const u8, cx: f32, y: f32, size: f32, col: rl.Color) void {
-    const tw = rl.MeasureTextEx(font, @ptrCast(text), size, 1.0).x;
+    var zbuf: [512]u8 = undefined;
+    const len = @min(text.len, 511);
+    @memcpy(zbuf[0..len], text[0..len]);
+    zbuf[len] = 0;
+    const tw = rl.MeasureTextEx(font, &zbuf, size, 1.0).x;
     drawText(font, text, cx - tw / 2.0, y, size, col);
 }
 
 fn loadUnicodeFont(size: c_int) rl.Font {
     var codepoints: [700]c_int = undefined;
     var cp_count: usize = 0;
-    // ASCII
     var c: usize = 32;
     while (c < 127) : (c += 1) {
         codepoints[cp_count] = @intCast(c);
         cp_count += 1;
     }
-    // Кириллица
     c = 0x0400;
     while (c < 0x0530) : (c += 1) {
         codepoints[cp_count] = @intCast(c);
         cp_count += 1;
     }
-    // Математические символы
-    codepoints[cp_count] = 0x00B0; cp_count += 1; // °
-    codepoints[cp_count] = 0x00B2; cp_count += 1; // ²
-    codepoints[cp_count] = 0x00B3; cp_count += 1; // ³
-    codepoints[cp_count] = 0x03C0; cp_count += 1; // π
-    codepoints[cp_count] = 0x03A9; cp_count += 1; // Ω
-    codepoints[cp_count] = 0x221E; cp_count += 1; // ∞
-    codepoints[cp_count] = 0x03A3; cp_count += 1; // Σ
-    codepoints[cp_count] = 0x0394; cp_count += 1; // Δ
-    codepoints[cp_count] = 0x2192; cp_count += 1; // →
-    codepoints[cp_count] = 0x2248; cp_count += 1; // ≈
-    codepoints[cp_count] = 0x2260; cp_count += 1; // ≠
-    codepoints[cp_count] = 0x00B1; cp_count += 1; // ±
-    codepoints[cp_count] = 0x2202; cp_count += 1; // ∂
-    codepoints[cp_count] = 0x222B; cp_count += 1; // ∫
-    codepoints[cp_count] = 0x25C8; cp_count += 1; // ◈
-    codepoints[cp_count] = 0x25A0; cp_count += 1; // ■
-    codepoints[cp_count] = 0x25CF; cp_count += 1; // ●
+    codepoints[cp_count] = 0x00B0; cp_count += 1;
+    codepoints[cp_count] = 0x00B2; cp_count += 1;
+    codepoints[cp_count] = 0x00B3; cp_count += 1;
+    codepoints[cp_count] = 0x03C0; cp_count += 1;
+    codepoints[cp_count] = 0x03A9; cp_count += 1;
+    codepoints[cp_count] = 0x221E; cp_count += 1;
+    codepoints[cp_count] = 0x03A3; cp_count += 1;
+    codepoints[cp_count] = 0x0394; cp_count += 1;
+    codepoints[cp_count] = 0x2192; cp_count += 1;
+    codepoints[cp_count] = 0x2248; cp_count += 1;
+    codepoints[cp_count] = 0x2260; cp_count += 1;
+    codepoints[cp_count] = 0x00B1; cp_count += 1;
+    codepoints[cp_count] = 0x2202; cp_count += 1;
+    codepoints[cp_count] = 0x222B; cp_count += 1;
+    codepoints[cp_count] = 0x25C8; cp_count += 1;
+    codepoints[cp_count] = 0x25A0; cp_count += 1;
+    codepoints[cp_count] = 0x25CF; cp_count += 1;
     codepoints[cp_count] = 0;
 
     const font = rl.LoadFontEx("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size, &codepoints, @intCast(cp_count));
@@ -348,54 +313,51 @@ fn loadUnicodeFont(size: c_int) rl.Font {
 // =============================================================================
 
 fn drawProjectiveBackground(time: f32, w: f32, h: f32) void {
-    // Фоновая градиентная сфера (симуляция S³)
-    const cx = w / 2.0 + math.sin(time * 0.3) * 50;
-    const cy = h / 2.0 + math.cos(time * 0.2) * 30;
-    const max_r = @max(w, h) * 0.6;
-    // Концентрические круги (горизонты P³)
+    const cx = w / 2.0 + @sin(time * 0.3) * 50;
+    const cy = h / 2.0 + @cos(time * 0.2) * 30;
     var i: f32 = 0;
     while (i < 8) : (i += 1.0) {
-        const r = 80 + i * 55 + math.sin(time + i) * 10;
+        const r = 80 + i * 55 + @sin(time + i) * 10;
         const alpha: u8 = @intFromFloat(@max(15, 50 - i * 5));
         rl.DrawCircleLines(@intFromFloat(cx), @intFromFloat(cy), r, .{ .r = 0, .g = 100, .b = 200, .a = alpha });
     }
-    // Радиальные линии (геодезические)
+    // FIX: явное f32 для деления
+    const step: f32 = math.pi / 6.0;
     var a: f32 = 0;
-    while (a < math.pi * 2) : (a += math.pi / 6) {
+    while (a < math.pi * 2.0) : (a += step) {
         const angle = a + time * 0.1;
-        const ex = cx + math.cos(angle) * max_r;
-        const ey = cy + math.sin(angle) * max_r;
+        const max_r = @max(w, h) * 0.6;
+        const ex = cx + @cos(angle) * max_r;
+        const ey = cy + @sin(angle) * max_r;
         rl.DrawLine(@intFromFloat(cx), @intFromFloat(cy), @intFromFloat(ex), @intFromFloat(ey), C_GRID_LINE);
     }
     // Плавающие частицы
-    var prng = std.Random.DefaultPrng.init(77);
-    const rand = prng.random();
+    var prng2 = std.Random.DefaultPrng.init(77);
+    const rand2 = prng2.random();
     var j: usize = 0;
     while (j < 40) : (j += 1) {
-        const px = rand.float(f32) * w;
-        const py = (rand.float(f32) * h + time * (10 + rand.float(f32) * 20)) % h;
-        const sz = 1.0 + rand.float(f32) * 2.0;
-        const br: u8 = @intFromFloat(60 + rand.float(f32) * 120);
-        rl.DrawCircle(@intFromFloat(px), @intFromFloat(py), sz, .{ .r = 0, .g = br, .b = @intFromFloat(@as(f32, @floatFromInt(br)) * 1.3), .a = 180 });
+        const px = rand2.float(f32) * w;
+        const py = (rand2.float(f32) * h + time * (10 + rand2.float(f32) * 20)) % h;
+        const sz = 1.0 + rand2.float(f32) * 2.0;
+        const br: u8 = @intFromFloat(60 + rand2.float(f32) * 120);
+        rl.DrawCircle(@intFromFloat(px), @intFromFloat(py), sz, .{ .r = 0, .g = br, .b = br * 4 / 3, .a = 180 });
     }
 }
 
 fn drawSidePanel(font: rl.Font, w: f32, h: f32, screen: Screen, time: f32) void {
+    _ = time;
+    _ = w;
     const panel_w: f32 = 260;
-    // Панель с логотипом
     rl.DrawRectangle(0, 0, @intFromFloat(panel_w), @intFromFloat(h), C_BG_PANEL);
     rl.DrawLine(@intFromFloat(panel_w), 0, @intFromFloat(panel_w), @intFromFloat(h), C_BORDER);
 
-    // Логотип P³
     const logo_y: f32 = 30;
     drawText(font, "P³ ENGINE", 24, logo_y, 28, C_ACCENT);
     drawText(font, "v" ++ ENGINE_VERSION, 24, logo_y + 32, 14, C_TEXT_DIM);
 
-    // Анимированная линия под лого
-    const line_w = 200 + math.sin(time * 2) * 10;
+    const line_w = 200 + @sin(time * 2) * 10;
     rl.DrawLine(24, @intFromFloat(logo_y + 55), @intFromFloat(24 + line_w), @intFromFloat(logo_y + 55), C_ACCENT_DIM);
 
-    // Меню
     const menu_items = [_]struct { label: []const u8, scr: Screen }{
         .{ .label = "◈  Главное меню", .scr = .main_menu },
         .{ .label = "■  Проекты", .scr = .projects },
@@ -409,7 +371,8 @@ fn drawSidePanel(font: rl.Font, w: f32, h: f32, screen: Screen, time: f32) void 
     for (menu_items) |item| {
         const active = screen == item.scr;
         const hovered = mouse.x < panel_w and mouse.y > my - 4 and mouse.y < my + 28;
-        const bg_col = if (active) C_BG_CARD_HOVER else if (hovered) C_BG_CARD else .{ .r = 0, .g = 0, .b = 0, .a = 0 };
+        // FIX: единый тип rl.Color для всех веток
+        const bg_col: rl.Color = if (active) C_BG_CARD_HOVER else if (hovered) C_BG_CARD else C_BG_DARK;
         if (active or hovered) {
             rl.DrawRectangle(8, @intFromFloat(my - 4), @intFromFloat(panel_w - 16), 28, bg_col);
         }
@@ -421,7 +384,6 @@ fn drawSidePanel(font: rl.Font, w: f32, h: f32, screen: Screen, time: f32) void 
         my += 38;
     }
 
-    // Нижняя часть панели
     const bottom_y = h - 80;
     rl.DrawLine(12, @intFromFloat(bottom_y), @intFromFloat(panel_w - 12), @intFromFloat(bottom_y), C_BORDER);
     drawText(font, "Архитектор: Kotokvit", 16, bottom_y + 12, 11, C_TEXT_DIM);
@@ -433,16 +395,15 @@ fn drawSidePanel(font: rl.Font, w: f32, h: f32, screen: Screen, time: f32) void 
 // ЭКРАНЫ
 // =============================================================================
 
-fn drawMainMenu(font: rl.Font, w: f32, h: f32, time: f32, buttons: *[6]Button) void {
+fn drawMainMenu(font: rl.Font, w: f32, h: f32, buttons: *[6]Button) void {
+    _ = h;
     const panel_x: f32 = 300;
     const content_w = w - panel_x;
     const cx = panel_x + content_w / 2;
 
-    // Заголовок
     drawTextCentered(font, "Движок проективной геометрии", cx, 60, 26, C_TEXT_BRIGHT);
     drawTextCentered(font, "Рендеринг на S³ с полным поддержанием PGL(4) и Кеплеровой гравитации", cx, 95, 13, C_TEXT_DIM);
 
-    // Кнопки главного меню
     const btn_w: f32 = 380;
     const btn_h: f32 = 52;
     const btn_x = cx - btn_w / 2;
@@ -466,35 +427,34 @@ fn drawMainMenu(font: rl.Font, w: f32, h: f32, time: f32, buttons: *[6]Button) v
         btn_y += btn_h + 12;
     }
 
-    // Информация о системе
     const info_y = h - 90;
     rl.DrawRectangle(@intFromFloat(panel_x + 20), @intFromFloat(info_y), @intFromFloat(content_w - 40), 70, C_BG_PANEL);
     rl.DrawRectangleLinesEx(.{ .x = panel_x + 20, .y = info_y, .width = content_w - 40, .height = 70 }, 1.0, C_BORDER);
 
     const fps = rl.GetFPS();
     var buf: [128]u8 = undefined;
-    const fps_txt = std.fmt.bufPrint(&buf, "FPS: {d}  |  Кадр: {d:.1}мс  |  Разрешение: {d}x{d}", .{ fps, if (fps > 0) 1000.0 / @as(f32, @floatFromInt(fps)) else 0.0, rl.GetScreenWidth(), rl.GetScreenHeight() }) catch "";
+    const fps_val: f32 = if (fps > 0) 1000.0 / @as(f32, @floatFromInt(fps)) else 0.0;
+    const fps_txt = std.fmt.bufPrint(&buf, "FPS: {d}  |  Кадр: {d:.1}мс  |  Разрешение: {d}x{d}", .{ fps, fps_val, rl.GetScreenWidth(), rl.GetScreenHeight() }) catch "";
     drawText(font, fps_txt, panel_x + 36, info_y + 12, 12, C_TEXT_DIM);
     drawText(font, "Модулей: 48  |  Тестов: 627+  |  GPU: WebGPU (Dawn) + zgpu", panel_x + 36, info_y + 30, 12, C_TEXT_DIM);
     drawText(font, "Проективная геометрия P³(RP³) на сфере S³ с координатами PGL(4)", panel_x + 36, info_y + 48, 12, C_ACCENT_DIM);
 }
 
-fn drawProjectsScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
+fn drawProjectsScreen(font: rl.Font, w: f32, h: f32) void {
+    _ = h;
     const panel_x: f32 = 300;
     const content_w = w - panel_x;
-    _ = time;
 
     drawText(font, "Проекты", panel_x + 30, 30, 24, C_TEXT_BRIGHT);
     drawText(font, "Управление проектами P³ Engine", panel_x + 30, 60, 13, C_TEXT_DIM);
 
-    // Кнопка создания
     const new_btn = rl.Rectangle{ .x = panel_x + content_w - 180, .y = 25, .width = 150, .height = 36 };
     const nb_hover = rl.CheckCollisionPointRec(rl.GetMousePosition(), new_btn);
     rl.DrawRectangleRounded(new_btn, 6.0, 4, if (nb_hover) C_ACCENT else C_BG_CARD);
     drawTextCentered(font, "+ Новый проект", new_btn.x + new_btn.width / 2, new_btn.y + 9, 14, if (nb_hover) C_BG_DARK else C_TEXT);
 
-    // Список проектов
-    const projects = [_]struct { name: []const u8, desc: []const u8, status: []const u8, col: rl.Color }{
+    const ProjectCard = struct { name: []const u8, desc: []const u8, status: []const u8, col: rl.Color };
+    const projects = [_]ProjectCard{
         .{ .name = "Void Voyager", .desc = "Космическая игра в проективном пространстве P³", .status = "Активен", .col = C_SUCCESS },
         .{ .name = "Процедурные меши", .desc = "Генерация кораблей, танков и болидов", .status = "Разработка", .col = C_WARNING },
         .{ .name = "Планетарная система", .desc = "Кеплерова гравитация и астрономия на S³", .status = "Активен", .col = C_SUCCESS },
@@ -508,12 +468,12 @@ fn drawProjectsScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
         const card = rl.Rectangle{ .x = panel_x + 20, .y = py, .width = content_w - 40, .height = 72 };
         const hover = rl.CheckCollisionPointRec(rl.GetMousePosition(), card);
         rl.DrawRectangleRounded(card, 8.0, 4, if (hover) C_BG_CARD_HOVER else C_BG_CARD);
-        if (hover) rl.DrawRectangleRoundedLines(card, 8.0, 4, 1.5, C_ACCENT_DIM);
+        // FIX: DrawRectangleRoundedLines — 4 аргумента (без толщины)
+        if (hover) rl.DrawRectangleRoundedLines(card, 8.0, 4, C_ACCENT_DIM);
 
         drawText(font, p.name, card.x + 16, card.y + 12, 16, C_TEXT_BRIGHT);
         drawText(font, p.desc, card.x + 16, card.y + 34, 12, C_TEXT_DIM);
-        // Статус
-        const status_w = rl.MeasureTextEx(font, @ptrCast(p.status), 11, 1.0).x + 16;
+        const status_w = 80;
         rl.DrawRectangleRounded(.{ .x = card.x + card.width - status_w - 12, .y = card.y + 12, .width = status_w, .height = 22 }, 4.0, 4, .{ .r = @intFromFloat(@as(f32, @floatFromInt(p.col.r)) * 0.2), .g = @intFromFloat(@as(f32, @floatFromInt(p.col.g)) * 0.2), .b = @intFromFloat(@as(f32, @floatFromInt(p.col.b)) * 0.2), .a = 255 });
         drawText(font, p.status, card.x + card.width - status_w - 4, card.y + 15, 11, p.col);
 
@@ -521,17 +481,16 @@ fn drawProjectsScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
     }
 }
 
-fn drawSettingsScreen(font: rl.Font, w: f32, h: f32, settings: *EngineSettings, time: f32) void {
+fn drawSettingsScreen(font: rl.Font, w: f32, h: f32, settings: *EngineSettings) void {
+    _ = h;
     const panel_x: f32 = 300;
     const content_w = w - panel_x;
-    _ = time;
-    _ = h;
 
     drawText(font, "Настройки движка", panel_x + 30, 30, 24, C_TEXT_BRIGHT);
     drawText(font, "Конфигурация видео, физики и управления", panel_x + 30, 60, 13, C_TEXT_DIM);
 
-    // Секции настроек
-    const sections = [_]struct { title: []const u8, items: [4]struct { label: []const u8, value: []const u8 } }{
+    const SettingSection = struct { title: []const u8, items: [4]struct { label: []const u8, value: []const u8 } };
+    const sections = [_]SettingSection{
         .{
             .title = "ВИДЕО",
             .items = .{
@@ -572,11 +531,9 @@ fn drawSettingsScreen(font: rl.Font, w: f32, h: f32, settings: *EngineSettings, 
 
     var sy: f32 = 100;
     for (sections) |sec| {
-        // Заголовок секции
         drawText(font, sec.title, panel_x + 30, sy, 12, C_ACCENT);
         sy += 22;
 
-        // Карточка секции
         const card = rl.Rectangle{ .x = panel_x + 20, .y = sy, .width = content_w - 40, .height = 120 };
         rl.DrawRectangleRounded(card, 8.0, 4, C_BG_CARD);
 
@@ -590,16 +547,16 @@ fn drawSettingsScreen(font: rl.Font, w: f32, h: f32, settings: *EngineSettings, 
     }
 }
 
-fn drawAssetsScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
+fn drawAssetsScreen(font: rl.Font, w: f32, h: f32) void {
+    _ = h;
     const panel_x: f32 = 300;
     const content_w = w - panel_x;
-    _ = time;
-    _ = h;
 
     drawText(font, "Браузер ассетов", panel_x + 30, 30, 24, C_TEXT_BRIGHT);
     drawText(font, "Сцены, модели, текстуры и шейдеры", panel_x + 30, 60, 13, C_TEXT_DIM);
 
-    const categories = [_]struct { name: []const u8, count: u32, icon: []const u8 }{
+    const AssetCat = struct { name: []const u8, count: u32, icon: []const u8 };
+    const categories = [_]AssetCat{
         .{ .name = "Сцены", .count = 5, .icon = "■" },
         .{ .name = "Модели", .count = 12, .icon = "◈" },
         .{ .name = "Текстуры", .count = 34, .icon = "●" },
@@ -608,12 +565,10 @@ fn drawAssetsScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
         .{ .name = "Скелеты", .count = 3, .icon = "●" },
     };
 
-    // Сетка категорий
     const grid_x: f32 = panel_x + 30;
     const grid_y: f32 = 110;
     const card_size: f32 = 170;
     const gap: f32 = 14;
-    const cols: f32 = 3;
 
     for (categories, 0..) |cat, i| {
         const col = @mod(i, 3);
@@ -624,24 +579,18 @@ fn drawAssetsScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
         const card = rl.Rectangle{ .x = cx, .y = cy, .width = card_size, .height = card_size };
         const hover = rl.CheckCollisionPointRec(rl.GetMousePosition(), card);
         rl.DrawRectangleRounded(card, 10.0, 4, if (hover) C_BG_CARD_HOVER else C_BG_CARD);
-        if (hover) rl.DrawRectangleRoundedLines(card, 10.0, 4, 1.5, C_ACCENT);
+        // FIX: 4 аргумента
+        if (hover) rl.DrawRectangleRoundedLines(card, 10.0, 4, C_ACCENT);
 
-        // Иконка
-        const icon_size = 32 + (if (hover) 4 else 0);
-        drawTextCentered(font, cat.icon, cx + card_size / 2, cy + 20, @floatFromInt(icon_size), C_ACCENT_DIM);
-
-        // Название
+        const icon_sz: f32 = if (hover) 36 else 32;
+        drawTextCentered(font, cat.icon, cx + card_size / 2, cy + 20, icon_sz, C_ACCENT_DIM);
         drawTextCentered(font, cat.name, cx + card_size / 2, cy + 70, 13, C_TEXT);
 
-        // Количество
         var buf: [32]u8 = undefined;
         const cnt_txt = std.fmt.bufPrint(&buf, "{d} эл.", .{cat.count}) catch "";
         drawTextCentered(font, cnt_txt, cx + card_size / 2, cy + 90, 11, C_TEXT_DIM);
-
-        _ = cols;
     }
 
-    // Нижняя панель информации
     const info_y: f32 = grid_y + 2 * (card_size + gap + 30) + 20;
     const info_rect = rl.Rectangle{ .x = panel_x + 20, .y = info_y, .width = content_w - 40, .height = 100 };
     rl.DrawRectangleRounded(info_rect, 8.0, 4, C_BG_PANEL);
@@ -651,22 +600,19 @@ fn drawAssetsScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
     drawText(font, "Ассетный процессор: встроенный (без внешних зависимостей)", info_rect.x + 16, info_rect.y + 74, 12, C_ACCENT_DIM);
 }
 
-fn drawAboutScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
+fn drawAboutScreen(font: rl.Font, w: f32, h: f32) void {
+    _ = h;
     const panel_x: f32 = 300;
     const content_w = w - panel_x;
-    _ = w;
-    _ = h;
 
     drawText(font, "О движке P³", panel_x + 30, 30, 24, C_TEXT_BRIGHT);
 
-    // Карточка версии
     const ver_card = rl.Rectangle{ .x = panel_x + 20, .y = 80, .width = content_w - 40, .height = 90 };
     rl.DrawRectangleRounded(ver_card, 10.0, 4, C_BG_CARD);
     drawText(font, "P³ Engine v" ++ ENGINE_VERSION, ver_card.x + 20, ver_card.y + 16, 20, C_GOLD);
     drawText(font, "Движок проективной геометрии на сфере S³", ver_card.x + 20, ver_card.y + 44, 13, C_TEXT);
     drawText(font, "Язык: Zig 0.14.0  |  Рендер: WebGPU (Dawn) + zgpu  |  Окна: zglfw", ver_card.x + 20, ver_card.y + 66, 11, C_TEXT_DIM);
 
-    // Модули движка
     const modules = [_][]const u8{
         "Проективное ядро (p3_kernel)",
         "Математика P³: Vec2/3/4, Mat3x3/4x4, Quat, Transform",
@@ -685,27 +631,24 @@ fn drawAboutScreen(font: rl.Font, w: f32, h: f32, time: f32) void {
     drawText(font, "Модули движка (48):", panel_x + 30, 190, 13, C_ACCENT);
     var my: f32 = 210;
     for (modules) |m| {
-        drawText(font, "  • " ++ m, panel_x + 30, my, 12, C_TEXT_DIM);
+        // FIX: нельзя конкатенировать comptime строку с runtime slice
+        drawText(font, "  • ", panel_x + 30, my, 12, C_TEXT_DIM);
+        drawText(font, m, panel_x + 54, my, 12, C_TEXT_DIM);
         my += 20;
     }
 
-    // Доноры
     const donor_y = my + 20;
     drawText(font, "Доноры (пожираны и переписаны):", panel_x + 30, donor_y, 13, C_ACCENT);
     drawText(font, "  O3DE (AzCore/Math, LyShine UI, ECS, Gem архитектура)", panel_x + 30, donor_y + 20, 12, C_TEXT_DIM);
     drawText(font, "  Unreal Engine (Math, Transform, Spring, DualQuat, SH, Skeletal)", panel_x + 30, donor_y + 38, 12, C_TEXT_DIM);
     drawText(font, "  zmath, zm, Mach (символьные операции, SIMD)", panel_x + 30, donor_y + 56, 12, C_TEXT_DIM);
 
-    // Автор
     const auth_y = donor_y + 90;
     rl.DrawRectangleRounded(.{ .x = panel_x + 20, .y = auth_y, .width = content_w - 40, .height = 50 }, 8.0, 4, C_BG_CARD);
-    drawText(font, "Архитектор: Kotokvit (математик)  |  Принцип: Убивать. Жрать. Рождать новое.", panel_x + 36, auth_y + 15, 12, C_TEXT);
-
-    _ = time;
+    drawText(font, "Архитектор: Kotokvit (математик)", panel_x + 36, auth_y + 15, 12, C_TEXT);
 }
 
 fn drawLoadingScreen(font: rl.Font, w: f32, h: f32, loading: *LoadingState) void {
-    // Звёздное поле
     for (loading.stars) |s| {
         rl.DrawCircle(@intFromFloat(s.x), @intFromFloat(s.y), s.size, .{
             .r = @intFromFloat(s.brightness * 200),
@@ -718,34 +661,26 @@ fn drawLoadingScreen(font: rl.Font, w: f32, h: f32, loading: *LoadingState) void
     const cx = w / 2;
     const cy = h / 2;
 
-    // Логотип с пульсацией
-    const pulse = 0.85 + 0.15 * @sin(loading.spring.value * math.pi * 4);
-    const logo_size: f32 = 36 * pulse;
+    // FIX: pulse f64 → f32
+    const pulse: f32 = @floatCast(0.85 + 0.15 * @sin(loading.spring.value * math.pi * 4.0));
+    const logo_size: f32 = 36.0 * pulse;
     drawTextCentered(font, "P³ ENGINE", cx, cy - 80, logo_size, C_ACCENT);
 
-    // Прогресс-бар
     const bar_w: f32 = 400;
     const bar_h: f32 = 8;
     const bar_x = cx - bar_w / 2;
     const bar_y = cy + 10;
 
-    // Фон прогресс-бара
     rl.DrawRectangleRounded(.{ .x = bar_x, .y = bar_y, .width = bar_w, .height = bar_h }, 4.0, 4, C_BG_CARD);
 
-    // Заполнение (со сприн-анимацией)
     const fill_w = bar_w * @as(f32, @floatCast(loading.spring.value));
     if (fill_w > 1) {
-        // Градиентное заполнение
         rl.DrawRectangleRounded(.{ .x = bar_x, .y = bar_y, .width = fill_w, .height = bar_h }, 4.0, 4, C_ACCENT);
-        // Блик
-        const glow_x = bar_x + fill_w;
-        rl.DrawCircle(@intFromFloat(glow_x), @intFromFloat(bar_y + bar_h / 2), 6, .{ .r = 0, .g = 255, .b = 255, .a = 100 });
+        rl.DrawCircle(@intFromFloat(bar_x + fill_w), @intFromFloat(bar_y + bar_h / 2), 6, .{ .r = 0, .g = 255, .b = 255, .a = 100 });
     }
 
-    // Фаза загрузки
     drawTextCentered(font, loading.phase, cx, bar_y + 24, 13, C_TEXT_DIM);
 
-    // Процент
     const pct = @as(f32, @floatCast(loading.spring.value)) * 100.0;
     var buf: [32]u8 = undefined;
     const pct_txt = std.fmt.bufPrint(&buf, "{d:.0}%", .{pct}) catch "";
@@ -757,24 +692,20 @@ fn drawLoadingScreen(font: rl.Font, w: f32, h: f32, loading: *LoadingState) void
 // =============================================================================
 
 pub fn main() !void {
-    // Инициализация окна
     rl.InitWindow(WINDOW_W, WINDOW_H, "P³ Engine Launcher v" ++ ENGINE_VERSION);
     rl.SetTargetFPS(60);
     rl.SetWindowState(rl.FLAG_WINDOW_RESIZABLE);
     defer rl.CloseWindow();
 
-    // Unicode шрифт
     const font = loadUnicodeFont(20);
     defer rl.UnloadFont(font);
 
-    // Состояние
     var current_screen: Screen = .main_menu;
     var settings = EngineSettings{};
     var loading = LoadingState.init();
     var global_time: f32 = 0;
-    var frame_count: u32 = 0;
+    _ = &settings;
 
-    // Кнопки главного меню
     var main_buttons = [_]Button{
         .{ .rect = .{ .x = 0, .y = 0, .width = 380, .height = 52 }, .label = "", .icon = "" },
         .{ .rect = .{ .x = 0, .y = 0, .width = 380, .height = 52 }, .label = "", .icon = "" },
@@ -784,18 +715,12 @@ pub fn main() !void {
         .{ .rect = .{ .x = 0, .y = 0, .width = 380, .height = 52 }, .label = "", .icon = "" },
     };
 
-    // Главный цикл
     while (!rl.WindowShouldClose()) {
         const dt = rl.GetFrameTime();
         global_time += dt;
-        frame_count += 1;
         const sw = @as(f32, @floatFromInt(rl.GetScreenWidth()));
         const sh = @as(f32, @floatFromInt(rl.GetScreenHeight()));
         const mouse = rl.GetMousePosition();
-
-        // ================================================================
-        // ОБРАБОТКА ВВОДА
-        // ================================================================
 
         // Навигация боковой панели
         if (current_screen != .loading and current_screen != .exit_confirm) {
@@ -855,10 +780,8 @@ pub fn main() !void {
         rl.ClearBackground(C_BG_DARK);
 
         if (current_screen == .loading) {
-            // Экран загрузки (полный экран)
             drawLoadingScreen(font, sw, sh, &loading);
         } else if (current_screen == .exit_confirm) {
-            // Подтверждение выхода
             drawProjectiveBackground(global_time, sw, sh);
             drawSidePanel(font, sw, sh, .main_menu, global_time);
 
@@ -869,9 +792,8 @@ pub fn main() !void {
             rl.DrawRectangle(@intFromFloat(dx - 1), @intFromFloat(dy - 1), @intFromFloat(dialog_w + 2), @intFromFloat(dialog_h + 2), C_ACCENT);
             rl.DrawRectangle(@intFromFloat(dx), @intFromFloat(dy), @intFromFloat(dialog_w), @intFromFloat(dialog_h), C_BG_PANEL);
             drawTextCentered(font, "Выйти из P³ Engine?", dx + dialog_w / 2, dy + 30, 20, C_TEXT_BRIGHT);
-            drawTextCentered(font, "Нажмите Y/Вход для подтверждения, N/Esc для отмены", dx + dialog_w / 2, dy + 65, 13, C_TEXT_DIM);
+            drawTextCentered(font, "Y/Вход = подтвердить, N/Esc = отмена", dx + dialog_w / 2, dy + 65, 13, C_TEXT_DIM);
 
-            // Кнопки
             const yes_btn = rl.Rectangle{ .x = dx + dialog_w / 2 - 160, .y = dy + 105, .width = 140, .height = 36 };
             const no_btn = rl.Rectangle{ .x = dx + dialog_w / 2 + 20, .y = dy + 105, .width = 140, .height = 36 };
             const y_hover = rl.CheckCollisionPointRec(mouse, yes_btn);
@@ -884,16 +806,15 @@ pub fn main() !void {
             if (y_hover and rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) break;
             if (n_hover and rl.IsMouseButtonPressed(rl.MOUSE_LEFT_BUTTON)) current_screen = .main_menu;
         } else {
-            // Основные экраны
             drawProjectiveBackground(global_time, sw, sh);
             drawSidePanel(font, sw, sh, current_screen, global_time);
 
             switch (current_screen) {
-                .main_menu => drawMainMenu(font, sw, sh, global_time, &main_buttons),
-                .projects => drawProjectsScreen(font, sw, sh, global_time),
-                .settings => drawSettingsScreen(font, sw, sh, &settings, global_time),
-                .assets => drawAssetsScreen(font, sw, sh, global_time),
-                .about => drawAboutScreen(font, sw, sh, global_time),
+                .main_menu => drawMainMenu(font, sw, sh, &main_buttons),
+                .projects => drawProjectsScreen(font, sw, sh),
+                .settings => drawSettingsScreen(font, sw, sh, &settings),
+                .assets => drawAssetsScreen(font, sw, sh),
+                .about => drawAboutScreen(font, sw, sh),
                 else => {},
             }
         }
