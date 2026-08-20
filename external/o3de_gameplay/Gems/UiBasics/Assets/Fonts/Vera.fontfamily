@@ -1,8 +1,0 @@
-<fontfamily name="Vera">
-    <font>
-        <file path="Vera.font" />
-        <file path="Vera-Bold.font" tags="b" />
-        <file path="Vera-Italic.font" tags="i" />
-        <file path="Vera-Bold-Italic.font" tags="b,i" />
-    </font>
-</fontfamily>
