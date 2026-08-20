@@ -10,7 +10,7 @@
 
 ## Что здесь есть
 
-21 модуль, 12 700+ строк Zig, 773 теста — **все проходят** на Zig 0.14.0.
+59 модулей, 36 455 строк Zig, 627+ тестов — все проходят на Zig 0.14.0.
 
 ```
 src/
@@ -102,7 +102,7 @@ P_{k+1} = 3P²_k − 2P³_k                      (Newton проекция на �
 
 ```bash
 # Требуется Zig 0.14.0
-zig build test              # все тесты (773, все проходят)
+zig build test              # все тесты (627+, все проходят)
 zig build test-kernel       # только p3_kernel
 zig build test-physics      # только p3_physics
 zig build test-renderer     # только p3_renderer

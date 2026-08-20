@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) void {
     //   zig build p3      — engine (stubs, headless)
     //   zig build p3-gpu  — engine (real zgpu/zglfw, needs GPU)
     //   zig build demo    — Raylib 3D live viewport demo
-    //   zig build test    — all 773 tests
+    //   zig build test    — all 627+ tests
     // ========================================================
 
     // --- All P³ library modules (no external deps) ---
@@ -90,6 +90,7 @@ pub fn build(b: *std.Build) void {
         .{ "vehicle_physics","src/p3_vehicle_physics.zig" },
         .{ "texture",        "src/p3_texture.zig" },
         .{ "character_physics","src/p3_character_physics.zig" },
+        .{ "pbr",            "src/p3_pbr.zig" },
     };
 
     // --- Phase 6 modules (need stubs for testing without GPU) ---
@@ -281,7 +282,7 @@ pub fn build(b: *std.Build) void {
     {
         const demo_exe = b.addExecutable(.{
             .name = "p3-demo-window",
-            .root_source_file = b.path("src/demo_window.zig"),
+            .root_source_file = b.path("examples/demo_window.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -326,7 +327,7 @@ pub fn build(b: *std.Build) void {
     {
         const gui_exe = b.addExecutable(.{
             .name = "p3-gui-demo",
-            .root_source_file = b.path("src/gui_demo.zig"),
+            .root_source_file = b.path("examples/gui_demo.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -371,7 +372,7 @@ pub fn build(b: *std.Build) void {
     {
         const editor_exe = b.addExecutable(.{
             .name = "p3-editor",
-            .root_source_file = b.path("src/editor_main.zig"),
+            .root_source_file = b.path("examples/editor_main.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -418,7 +419,7 @@ pub fn build(b: *std.Build) void {
     {
         const game_exe = b.addExecutable(.{
             .name = "p3-game",
-            .root_source_file = b.path("src/game_main.zig"),
+            .root_source_file = b.path("examples/game_main.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -463,7 +464,7 @@ pub fn build(b: *std.Build) void {
     {
         const tank_exe = b.addExecutable(.{
             .name = "p3-tank-arena",
-            .root_source_file = b.path("src/tank_arena_main.zig"),
+            .root_source_file = b.path("examples/tank_arena_main.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -588,7 +589,7 @@ pub fn build(b: *std.Build) void {
     {
         const race_exe = b.addExecutable(.{
             .name = "p3-race",
-            .root_source_file = b.path("src/race_main.zig"),
+            .root_source_file = b.path("examples/race_main.zig"),
             .target = target,
             .optimize = optimize,
         });
