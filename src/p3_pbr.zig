@@ -201,12 +201,15 @@ pub fn smithG(NdotV: f32, NdotL: f32, alpha: f32) f32 {
 // Rendering" (public domain, decades old)
 // ---------------------------------------------------------------------------
 pub fn fresnelSchlick(VdotH: f32, F0: Color) Color {
-    if (VdotH <= 0) return F0;
-    const factor = math.pow(f32, 1 - VdotH, 5);
+    // Schlick: F = F0 + (1 - F0) * (1 - V·H)^5
+    // At V·H = 0 (grazing angle): factor = 1^5 = 1, so F = F0 + (1 - F0) = 1.0 (total reflection)
+    // At V·H = 1 (normal incidence): factor = 0, so F = F0
+    const v = @max(VdotH, 0.0);
+    const factor = math.pow(f32, 1.0 - v, 5);
     return Color.init(
-        F0.r + (1 - F0.r) * factor,
-        F0.g + (1 - F0.g) * factor,
-        F0.b + (1 - F0.b) * factor,
+        F0.r + (1.0 - F0.r) * factor,
+        F0.g + (1.0 - F0.g) * factor,
+        F0.b + (1.0 - F0.b) * factor,
     );
 }
 
@@ -223,11 +226,11 @@ pub fn cookTorranceBrdf(
 ) Color {
     const H = V.add(L).normalize(); // half-vector
     const NdotV = @max(N.dot(V), 0.001);
-    const NdotL = @max(N.dot(L), 0.001);
+    const NdotL_raw = N.dot(L);
+    if (NdotL_raw <= 0) return Color.black();
+    const NdotL = @max(NdotL_raw, 0.001);
     const NdotH = @max(N.dot(H), 0.0);
     const VdotH = @max(V.dot(H), 0.0);
-
-    if (NdotL <= 0) return Color.black();
 
     const alpha = material.computeAlpha();
     const F0 = material.computeF0();
@@ -245,8 +248,9 @@ pub fn cookTorranceBrdf(
     }
 
     // Diffuse: (1 - F) * albedo / π  (energy conservation)
-    const kD = Color.init(1 - F.r, 1 - F.g, 1 - F.b);
-    const diffuse = kD.mul(material.base_color).scale(1 / math.pi * (1 - material.metallic));
+    const kD = Color.init(1.0 - F.r, 1.0 - F.g, 1.0 - F.b);
+    const one_over_pi = 1.0 / math.pi;
+    const diffuse = kD.mul(material.base_color).scale(one_over_pi * (1.0 - material.metallic));
 
     return diffuse.add(specular);
 }
@@ -280,8 +284,8 @@ pub fn imageBasedLighting(
 
     // Diffuse IBL: irradiance * albedo * (1 - metallic)
     const kS = F0; // approximation: metallic reflects, dielectric absorbs
-    const kD = Color.init(1 - kS.r, 1 - kS.g, 1 - kS.b).scale(1 - material.metallic);
-    const indirect_diffuse = irradiance_color.mul(material.base_color).mul(kD).scale(1 / math.pi);
+    const kD = Color.init(1.0 - kS.r, 1.0 - kS.g, 1.0 - kS.b).scale(1.0 - material.metallic);
+    const indirect_diffuse = irradiance_color.mul(material.base_color).mul(kD).scale(1.0 / math.pi);
 
     return indirect_diffuse.add(indirect_specular);
 }
@@ -333,8 +337,8 @@ test "PBR: GGX NDF peaks at N·H=1" {
     const d_peak = ggxNdf(1.0, alpha);
     const d_off = ggxNdf(0.5, alpha);
     try std.testing.expect(d_peak > d_off);
-    // At N·H=1, denom = π * (a² * 0 + 1)² = π, so D = a²/π
-    const expected = alpha * alpha / math.pi;
+    // At N·H=1: denom_sq = 1*(a²-1)+1 = a², denom = π*a⁴, so D = a² / (π*a⁴) = 1/(π*a²)
+    const expected = 1.0 / (math.pi * alpha * alpha);
     try std.testing.expectApproxEqAbs(d_peak, expected, 0.001);
 }
 

@@ -58,10 +58,18 @@ pub const Rect = struct {
 
 /// Заливка прямоугольника
 pub fn fillRect(fb: *VisualFrameBuffer, r: Rect, color: PixelColor) void {
-    const x0: usize = @max(0, @as(usize, @intFromFloat(r.x)));
-    const y0: usize = @max(0, @as(usize, @intFromFloat(r.y)));
-    const x1: usize = @min(fb.width, @as(usize, @intFromFloat(r.x + r.w)));
-    const y1: usize = @min(fb.height, @as(usize, @intFromFloat(r.y + r.h)));
+    // Clamp to non-negative floats BEFORE @intFromFloat — otherwise negative
+    // coordinates (e.g. when text is wider than its container and gets
+    // center-clipped to a negative x) panic at runtime in Debug mode.
+    const xf = @max(0.0, r.x);
+    const yf = @max(0.0, r.y);
+    const x1f = @max(0.0, r.x + r.w);
+    const y1f = @max(0.0, r.y + r.h);
+    const x0: usize = @intFromFloat(xf);
+    const y0: usize = @intFromFloat(yf);
+    const x1: usize = @min(fb.width, @as(usize, @intFromFloat(x1f)));
+    const y1: usize = @min(fb.height, @as(usize, @intFromFloat(y1f)));
+    if (x1 <= x0 or y1 <= y0) return;
     var y: usize = y0;
     while (y < y1) : (y += 1) {
         var x: usize = x0;
@@ -158,7 +166,7 @@ pub fn drawText(fb: *VisualFrameBuffer, text: []const u8, x: f32, y: f32, size: 
 }
 
 /// Отрисовка одного символа (упрощённая — прямоугольник с паттерном)
-fn drawChar(fb: *VisualFrameBuffer, ch: u8, x: f32, y: f32, size: f32, color: PixelColor) void {
+fn drawChar(fb: *VisualFrameBuffer, _: u8, x: f32, y: f32, size: f32, color: PixelColor) void {
     // Упрощённо: рисуем прямоугольник как фон символа
     // В реальной версии — bitmap pattern per character
     const w = size * 0.6;
@@ -555,7 +563,7 @@ pub fn drawEngineSettingsScreen(
     header.draw(fb);
 
     var y: f32 = 60;
-    var wh: f32 = layout.contentW() * 0.8;
+    const wh: f32 = layout.contentW() * 0.8;
 
     const items = [_]struct { label: []const u8, value: []const u8 }{
         .{ .label = "Имя движка:", .value = engine_name },

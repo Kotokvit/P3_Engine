@@ -135,6 +135,16 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
         });
+        // p3_o3de_* modules export C-ABI functions and use std.heap.c_allocator,
+        // so they need libc linked during tests (otherwise: "C allocator is
+        // only available when linking against libc").
+        if (std.mem.startsWith(u8, mod_name, "o3de_") or
+            std.mem.eql(u8, mod_name, "launcher_core") or
+            std.mem.eql(u8, mod_name, "launcher_ui") or
+            std.mem.eql(u8, mod_name, "bridge"))
+        {
+            mod_tests.linkLibC();
+        }
         const run_mod_tests = b.addRunArtifact(mod_tests);
         test_step.dependOn(&run_mod_tests.step);
 
