@@ -91,15 +91,23 @@ pub const NativeO3DELauncher = struct {
 
     /// Нативный Run() аналог O3DELauncher::Run
     pub fn run(self: *NativeO3DELauncher) ReturnCode {
+        const stderr = std.io.getStdErr().writer();
+
         // 1. Лимиты ОС
+        stderr.print("   [1/4] Установка лимитов ОС (RLIMIT_NOFILE/STACK)... ", .{}) catch {};
         if (!increaseResourceLimits()) {
+            stderr.print("FAIL\n", .{}) catch {};
             return .err_resource_limit;
         }
+        stderr.print("OK\n", .{}) catch {};
 
         // 2. Инициализация VFS / Asset System
-        self.asset_system = o3de_asset_system.NativeAssetSystem.init(self.allocator, self.config.project_path) catch {
+        stderr.print("   [2/4] NativeAssetSystem.init (project_root={s})... ", .{self.config.project_path}) catch {};
+        self.asset_system = o3de_asset_system.NativeAssetSystem.init(self.allocator, self.config.project_path) catch |err| {
+            stderr.print("FAIL ({s})\n", .{@errorName(err)}) catch {};
             return .err_asset_processor;
         };
+        stderr.print("OK (cache_root={s})\n", .{self.asset_system.?.cache_root}) catch {};
 
         // 3. Загрузка стартового уровня сцены (.spawnable)
         var level_path_buf: [512]u8 = undefined;
@@ -109,13 +117,20 @@ pub const NativeO3DELauncher = struct {
             self.config.level_name,
         }) catch return .err_app_descriptor;
 
+        stderr.print("   [3/4] Spawnable.loadFromFile({s})... ", .{level_path}) catch {};
         var spawnable = o3de_spawnable.Spawnable.init(self.allocator);
-        spawnable.loadFromFile(level_path) catch {
+        // Zig's `catch` is an expression — when loadFromFile succeeds, the
+        // catch block is skipped silently. We use a flag to distinguish
+        // success vs fallback so the log line reflects reality.
+        var file_loaded = true;
+        spawnable.loadFromFile(level_path) catch |err| {
             // Fallback when .spawnable file does not exist (no project
             // initialised yet). MUST allocator.dupe the literal — otherwise
             // SpawnableEntity.deinit would call c_allocator.free() on a
             // pointer into read-only .rodata, which is undefined behavior
             // and on glibc/Linux typically raises SIGSEGV (exit 139).
+            file_loaded = false;
+            stderr.print("miss ({s}) → fallback DefaultRootEntity\n", .{@errorName(err)}) catch {};
             const fallback_name = self.allocator.dupe(u8, "DefaultRootEntity") catch {
                 self.spawnable_scene = spawnable;
                 return .err_app_descriptor;
@@ -130,7 +145,13 @@ pub const NativeO3DELauncher = struct {
                 return .err_app_descriptor;
             };
         };
+        if (file_loaded) {
+            stderr.print("OK ({d} entities)\n", .{spawnable.entities.items.len}) catch {};
+        }
         self.spawnable_scene = spawnable;
+
+        // 4. Готово (фаза 5: открыть окно, рендер-луп — пока не реализовано)
+        stderr.print("   [4/4] Готово. Рендер-луп Qt5/raylib — TODO (см. ROADMAP.md)\n", .{}) catch {};
 
         return .success;
     }
