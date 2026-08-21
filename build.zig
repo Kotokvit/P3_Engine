@@ -783,5 +783,29 @@ pub fn build(b: *std.Build) void {
 
         const bridge_step = b.step("o3de-bridge", "Build P3 O3DE Native Bridge Shared Library (.so)");
         bridge_step.dependOn(&install_bridge.step);
+
+        const cpp_launcher = b.addExecutable(.{
+            .name = "p3-launcher-cpp",
+            .target = target,
+            .optimize = optimize,
+        });
+        cpp_launcher.addCSourceFiles(.{
+            .files = &.{
+                "launcher-src/LauncherUnified/O3DE_LauncherApp_Patched.cpp",
+            },
+            .flags = &.{
+                "-std=c++17",
+                "-Iinclude",
+            },
+        });
+        cpp_launcher.linkLibC();
+        cpp_launcher.linkLibCpp();
+        cpp_launcher.linkLibrary(bridge_lib);
+
+        const install_cpp_launcher = b.addInstallArtifact(cpp_launcher, .{});
+        b.getInstallStep().dependOn(&install_cpp_launcher.step);
+
+        const cpp_launcher_step = b.step("launcher-cpp", "Build P3 Launcher from C++ source files (launcher-src/)");
+        cpp_launcher_step.dependOn(&install_cpp_launcher.step);
     }
 }
