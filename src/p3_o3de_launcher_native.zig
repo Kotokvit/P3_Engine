@@ -111,11 +111,24 @@ pub const NativeO3DELauncher = struct {
 
         var spawnable = o3de_spawnable.Spawnable.init(self.allocator);
         spawnable.loadFromFile(level_path) catch {
+            // Fallback when .spawnable file does not exist (no project
+            // initialised yet). MUST allocator.dupe the literal — otherwise
+            // SpawnableEntity.deinit would call c_allocator.free() on a
+            // pointer into read-only .rodata, which is undefined behavior
+            // and on glibc/Linux typically raises SIGSEGV (exit 139).
+            const fallback_name = self.allocator.dupe(u8, "DefaultRootEntity") catch {
+                self.spawnable_scene = spawnable;
+                return .err_app_descriptor;
+            };
             spawnable.entities.append(.{
                 .id = 1,
-                .name = "DefaultRootEntity",
+                .name = fallback_name,
                 .is_active = true,
-            }) catch {};
+            }) catch {
+                self.allocator.free(fallback_name);
+                self.spawnable_scene = spawnable;
+                return .err_app_descriptor;
+            };
         };
         self.spawnable_scene = spawnable;
 
