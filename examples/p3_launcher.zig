@@ -128,9 +128,17 @@ pub fn main() !void {
         const sw: f32 = @floatFromInt(rl.GetScreenWidth());
         const sh: f32 = @floatFromInt(rl.GetScreenHeight());
         const mouse_pos = rl.GetMousePosition();
-        const mouse_clicked = rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT);
         const mouse_down_right = rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT);
+        const mouse_clicked = rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT);
         const wheel = rl.GetMouseWheelMove();
+
+        // Гарантируем, что системный курсор всегда разблокирован и виден внутри окна
+        if (rl.IsCursorHidden()) {
+            rl.ShowCursor();
+        }
+        if (!rl.IsCursorOnScreen()) {
+            // Курсор вышел за границы или был отпущен
+        }
 
         if (current_tab == .gems) {
             gem_scroll -= wheel * 30.0;

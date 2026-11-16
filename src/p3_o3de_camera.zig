@@ -10,9 +10,13 @@
 
 const std = @import("std");
 const math = std.math;
+const p3_kernel = @import("p3_kernel.zig");
 const p3_math = @import("p3_math.zig");
 const p3_quaternion = @import("p3_quaternion.zig");
 const p3_dual_quat = @import("p3_dual_quat.zig");
+
+pub const HomVec4 = p3_kernel.HomVec4;
+pub const PGL4 = p3_kernel.PGL4;
 
 pub const Vec3 = struct {
     x: f32 = 0.0,
@@ -42,6 +46,10 @@ pub const NativeCamera = struct {
     near_clip: f32 = 0.1,
     far_clip: f32 = 1000.0,
 
+    // Проективные 4D координаты [X : Y : Z : W] на S³
+    pos_p3: HomVec4 = HomVec4.init(0, 0, 0, 1),
+    w_scale: f32 = 1.0, // 4-я однородная компонента масштаба гиперсферы
+
     pub fn init() NativeCamera {
         return .{};
     }
@@ -65,10 +73,23 @@ pub const NativeCamera = struct {
         };
     }
 
+    /// Получение 4D проективной позиции на S³ [X : Y : Z : W]
+    pub fn getTranslation4D(self: *const NativeCamera) HomVec4 {
+        const t3 = self.getTranslation();
+        return HomVec4.init(t3.x, t3.y, t3.z, self.w_scale);
+    }
+
     /// Вращение камеры (Orbit вокруг pivot)
     pub fn orbit(self: *mut_ref(NativeCamera), delta_yaw: f32, delta_pitch: f32) void {
         self.yaw += delta_yaw;
         self.pitch = std.math.clamp(self.pitch + delta_pitch, -math.pi * 0.49, math.pi * 0.49);
+        self.pos_p3 = self.getTranslation4D();
+    }
+
+    /// Вращение в 4D плоскости (XW / YW / ZW проективные повороты)
+    pub fn rotate4D(self: *mut_ref(NativeCamera), delta_w: f32) void {
+        self.w_scale = std.math.clamp(self.w_scale + delta_w, 0.1, 10.0);
+        self.pos_p3 = self.getTranslation4D();
     }
 
     /// Перемещение точки фокусировки (Pan)
@@ -78,11 +99,13 @@ pub const NativeCamera = struct {
 
         self.pivot.x += dx * cos_yaw - dy * sin_yaw;
         self.pivot.y += dx * sin_yaw + dy * cos_yaw;
+        self.pos_p3 = self.getTranslation4D();
     }
 
     /// Приближение / удаление (Zoom)
     pub fn zoom(self: *mut_ref(NativeCamera), delta: f32) void {
         self.offset.y = @max(0.5, self.offset.y - delta);
+        self.pos_p3 = self.getTranslation4D();
     }
 
     fn mut_ref(comptime T: type) type {
